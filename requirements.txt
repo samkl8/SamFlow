@@ -1,0 +1,7 @@
+sounddevice>=0.4.7
+numpy>=1.26
+requests>=2.32
+pyobjc-framework-Quartz>=10.3
+pyobjc-framework-Cocoa>=10.3
+pyobjc-framework-ApplicationServices>=10.3
+pyobjc-framework-AVFoundation>=10.3

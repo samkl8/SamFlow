@@ -1,0 +1,7 @@
+.venv/
+models/*.bin
+__pycache__/
+*.log
+
+# Live launchd plists carry absolute paths; install.sh generates them fresh.
+launchd/

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.samflow.server</string>
+
+    <!-- Keeps the Whisper model warm and mmap'd. Cold a dictation costs ~11s,
+         warm ~0.5s. install.sh fills in the @@...@@ placeholders. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>@@WHISPER_SERVER@@</string>
+        <string>-m</string>
+        <string>@@SAMFLOW_DIR@@/models/ggml-large-v3-turbo-q5_0.bin</string>
+        <string>--host</string>
+        <string>127.0.0.1</string>
+        <string>--port</string>
+        <string>8181</string>
+        <string>-l</string>
+        <string>@@LANGUAGE@@</string>
+        <string>-t</string>
+        <string>8</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>@@HOME@@/Library/Logs/samflow-server.log</string>
+    <key>StandardErrorPath</key>
+    <string>@@HOME@@/Library/Logs/samflow-server.log</string>
+</dict>
+</plist>

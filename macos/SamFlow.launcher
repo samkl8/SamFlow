@@ -1,0 +1,16 @@
+#!/bin/sh
+# SamFlow.app launcher. Thin wrapper: the real work is in samflow.py. This bundle
+# exists so macOS attaches the mic/accessibility permissions to one stable app
+# identity instead of to the bare python binary (whose path changes on every uv
+# upgrade, which would lose its permissions).
+#
+# We do NOT exec: python stays a child of this shell, so the TCC "responsible
+# process" is this app bundle and the permissions apply. install.sh replaces the
+# @@SAMFLOW_DIR@@ placeholder with the real project path.
+DIR="@@SAMFLOW_DIR@@"
+exec >> "$HOME/Library/Logs/samflow.log" 2>&1
+echo "=== SamFlow start $(date '+%F %T')  args=[$*] ==="
+"$DIR/.venv/bin/python" "$DIR/samflow.py" "$@" &
+child=$!
+trap 'kill "$child" 2>/dev/null' TERM INT
+wait "$child"

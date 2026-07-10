@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>SamFlow</string>
+    <key>CFBundleDisplayName</key>
+    <string>SamFlow</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.samflow.app</string>
+    <key>CFBundleExecutable</key>
+    <string>SamFlow</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
+
+    <!-- Background/menu-bar app: no Dock icon, no window. -->
+    <key>LSUIElement</key>
+    <true/>
+
+    <!-- Shown by macOS in the microphone permission dialog. -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>SamFlow transcribes your speech locally while you hold the Fn key.</string>
+</dict>
+</plist>
