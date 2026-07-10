@@ -28,14 +28,15 @@ import time
 
 import objc
 from AppKit import (
-    NSApplication, NSApplicationActivationPolicyAccessory, NSBackingStoreBuffered,
+    NSApplication, NSApplicationActivationPolicyAccessory,
+    NSApplicationDidChangeScreenParametersNotification, NSBackingStoreBuffered,
     NSBezierPath, NSColor, NSMakeRect, NSMenu, NSMenuItem, NSPanel, NSScreen,
     NSStatusBar, NSTimer, NSView,
     NSWindowCollectionBehaviorCanJoinAllSpaces, NSWindowCollectionBehaviorFullScreenAuxiliary,
     NSWindowCollectionBehaviorStationary, NSWindowStyleMaskBorderless,
     NSWindowStyleMaskNonactivatingPanel,
 )
-from Foundation import NSObject
+from Foundation import NSNotificationCenter, NSObject
 
 import focus
 
@@ -187,6 +188,9 @@ class _Ticker(NSObject):
     def tick_(self, _timer):
         self.hud._on_tick()
 
+    def screensChanged_(self, _note):
+        self.hud._rebuild_panel()
+
     def quit_(self, _sender):
         NSApplication.sharedApplication().terminate_(None)
 
@@ -198,6 +202,7 @@ class Hud:
         self._level = 0.0
         self._shown = None
         self._done_until = 0.0
+        self.panel = None
 
     # --- called from any thread -------------------------------------------
     def set_state(self, state: str):
@@ -222,6 +227,27 @@ class Hud:
         self.app = NSApplication.sharedApplication()
         self.app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
 
+        self._build_panel()
+
+        self.status = NSStatusBar.systemStatusBar().statusItemWithLength_(-1.0)
+        self.status.button().setTitle_(MENU_ICONS["idle"])
+
+        self._ticker = _Ticker.alloc().initWithHud_(self)
+
+        # Een extern scherm in- of uitpluggen terwijl we draaien maakt het paneel
+        # ongeldig; zonder deze notificatie blijft de pill onvindbaar tot een
+        # herstart. Zie _rebuild_panel voor het waarom. Levert op de main thread.
+        NSNotificationCenter.defaultCenter().addObserver_selector_name_object_(
+            self._ticker, "screensChanged:",
+            NSApplicationDidChangeScreenParametersNotification, None)
+
+        self._build_menu()
+        NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+            1 / 30.0, self._ticker, "tick:", None, True)
+
+    def _build_panel(self):
+        """Maakt het pill-paneel aan tegen de HUIDIGE schermtopologie. Apart van
+        build() zodat _rebuild_panel het na een schermwissel kan hermaken."""
         screen = NSScreen.mainScreen().frame()
         frame = NSMakeRect((screen.size.width - PILL_W) / 2, PILL_BOTTOM, PILL_W, PILL_H)
 
@@ -239,13 +265,27 @@ class Hud:
             | NSWindowCollectionBehaviorFullScreenAuxiliary)
         self.panel.setContentView_(_PillView.alloc().initWithHud_(self))
 
-        self.status = NSStatusBar.systemStatusBar().statusItemWithLength_(-1.0)
-        self.status.button().setTitle_(MENU_ICONS["idle"])
+    def _rebuild_panel(self):
+        """
+        Displays veranderd: bouw het paneel opnieuw op. Een NSPanel die is
+        aangemaakt terwijl er nog een extern scherm hing, blijft na het
+        loskoppelen 'verweesd' op dat verdwenen scherm -- orderFrontRegardless()
+        met een setFrameOrigin_ naar geldige coordinaten toont hem dan niet meer
+        op het scherm dat overblijft. Een vers paneel tegen de huidige topologie
+        werkt wel. (Getest: extern scherm los -> pill onvindbaar tot dit draait;
+        met deze herbouw komt hij terug zonder de daemon te herstarten.)
 
-        self._ticker = _Ticker.alloc().initWithHud_(self)
-        self._build_menu()
-        NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
-            1 / 30.0, self._ticker, "tick:", None, True)
+        Draait op de main thread: NSApplication levert deze notificatie op de run
+        loop waar ook de 30 fps-timer en de Fn-tap aan hangen, dus geen race met
+        _on_tick dat hetzelfde paneel leest.
+        """
+        shown = self._shown not in (None, "idle")
+        if self.panel is not None:
+            self.panel.orderOut_(None)
+        self._build_panel()
+        if shown:
+            self._place()
+            self.panel.orderFrontRegardless()
 
     def _place(self):
         """

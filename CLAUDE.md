@@ -63,6 +63,13 @@ Dit is de onderhoudslus van het project. Hoor je een woord dat er verkeerd uitko
   door een eigen loop naast `CFRunLoopRun()` — dan mist de Fn-tap events.
 - De balken worden gevoed door de échte mic-RMS. Vervang dat niet door een animatie: het feit
   dat ze alleen bewegen als de microfoon je hoort, is precies de diagnostische waarde.
+- **Bouw het paneel opnieuw als het scherm wisselt.** Een `NSPanel` die is aangemaakt terwijl er
+  nog een extern scherm hing, blijft na het loskoppelen verweesd op dat verdwenen scherm:
+  `orderFrontRegardless()` mét een geldige `setFrameOrigin_` toont hem dan niet meer op het
+  overgebleven scherm — de pill "gaat niet mee" en lijkt helemaal weg. `_rebuild_panel()` hangt
+  daarom aan `NSApplicationDidChangeScreenParametersNotification` en maakt een vers paneel tegen
+  de huidige topologie. Verwijder die observer niet: zonder hem is de enige remedie de daemon
+  herstarten. (De placement-wiskunde is hier onschuldig — die leest de schermen elk dictaat live.)
 
 ## Regels bij het aanpassen van focus.py
 - **Quartz telt y naar beneden vanaf het hoofdscherm, Cocoa naar boven.** `to_cocoa()` is de
