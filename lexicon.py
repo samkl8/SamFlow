@@ -221,23 +221,27 @@ def record(raw_text):
 
 
 def add_term(term):
-    """Voeg een term toe aan lexicon.txt (canonieke schrijfwijze zoals gegeven)."""
+    """Voeg een term toe aan lexicon.txt. Weigert te korte onzin. True als het lukte."""
     term = term.strip()
-    if not term:
-        return
+    if len(term) < 2:
+        return False
     with open(LEXICON_FILE, "a", encoding="utf-8") as f:
         f.write(term + "\n")
     _cache.pop(LEXICON_FILE, None)
+    return True
 
 
 def add_mapping(heard, canon):
-    """Leer een fonetische misser: 'heard = Canonical' naar mappings.txt."""
+    """Leer een fonetische misser: 'heard = Canonical' naar mappings.txt. Weigert een
+    leeg of eenletterig doel -- zoiets ('dashboard = m') zou een gewoon woord slopen.
+    True als het lukte."""
     heard, canon = heard.strip(), canon.strip()
-    if not heard or not canon:
-        return
+    if not heard or len(canon) < 2:
+        return False
     with open(MAPPINGS_FILE, "a", encoding="utf-8") as f:
         f.write(f"{heard} = {canon}\n")
     _cache.pop(MAPPINGS_FILE, None)
+    return True
 
 
 def review():
@@ -259,17 +263,20 @@ def review():
             break
         if choice == "a":
             spelling = input(f"      schrijfwijze [{word}]: ").strip() or word
-            add_term(spelling)
-            data["counts"].pop(word, None)
-            data["ignored"].append(word)
-            print(f"      + '{spelling}' toegevoegd aan lexicon.txt")
+            if add_term(spelling):
+                data["counts"].pop(word, None)
+                data["ignored"].append(word)
+                print(f"      + '{spelling}' toegevoegd aan lexicon.txt")
+            else:
+                print("      ongeldig (te kort), overgeslagen")
         elif choice == "m":
-            canon = input(f"      '{word}' hoort te zijn: ").strip()
-            if canon:
-                add_mapping(word, canon)
+            canon = input(f"      '{word}' hoort te zijn (canonieke vorm): ").strip()
+            if add_mapping(word, canon):
                 data["counts"].pop(word, None)
                 data["ignored"].append(word)
                 print(f"      + '{word} = {canon}' toegevoegd aan mappings.txt")
+            else:
+                print("      ongeldig (leeg of te kort) -- niet opgeslagen")
         elif choice == "i":
             data["counts"].pop(word, None)
             data["ignored"].append(word)

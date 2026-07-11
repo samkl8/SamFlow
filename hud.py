@@ -34,7 +34,7 @@ import objc
 from AppKit import (
     NSApplication, NSApplicationActivationPolicyAccessory,
     NSApplicationDidChangeScreenParametersNotification, NSBackingStoreBuffered,
-    NSBezierPath, NSColor, NSMakeRect, NSMenu, NSMenuItem, NSPanel, NSScreen,
+    NSBezierPath, NSColor, NSImage, NSMakeRect, NSMenu, NSMenuItem, NSPanel, NSScreen,
     NSStatusBar, NSTimer, NSView,
     NSWindowCollectionBehaviorCanJoinAllSpaces, NSWindowCollectionBehaviorFullScreenAuxiliary,
     NSWindowCollectionBehaviorStationary, NSWindowStyleMaskBorderless,
@@ -68,6 +68,30 @@ _ACCENT = {
     "thinking": (0.45, 0.65, 1.00),    # blue
     "done": (0.30, 0.85, 0.45),        # green
 }
+
+# Kleuren voor het menubalk-icoon per status (idle is neutraal grijs).
+_STATUS_COLORS = dict(_ACCENT, idle=(0.60, 0.60, 0.62))
+
+
+def _status_image(state):
+    """Het balkjes-icoon voor de menubalk, gekleurd naar de status. Klein en niet-
+    template, zodat de kleur (rood tijdens opnemen) behouden blijft."""
+    r, g, b = _STATUS_COLORS.get(state, (0.6, 0.6, 0.62))
+    w, h = 22.0, 16.0
+    heights = [0.42, 0.72, 1.00, 0.60]
+    bw, gap = 2.8, 2.4
+    img = NSImage.alloc().initWithSize_((w, h))
+    img.lockFocus()
+    NSColor.colorWithCalibratedRed_green_blue_alpha_(r, g, b, 1.0).set()
+    total = len(heights) * bw + (len(heights) - 1) * gap
+    x = (w - total) / 2
+    for hh in heights:
+        bh = 4.0 + (h - 6.0) * hh
+        NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+            NSMakeRect(x, (h - bh) / 2, bw, bh), bw / 2, bw / 2).fill()
+        x += bw + gap
+    img.unlockFocus()
+    return img
 
 
 def _bottom_centre(screen) -> tuple:
@@ -256,7 +280,9 @@ class Hud:
         self._build_panel()
 
         self.status = NSStatusBar.systemStatusBar().statusItemWithLength_(-1.0)
-        self.status.button().setTitle_(MENU_ICONS["idle"])
+        self._status_images = {s: _status_image(s)
+                               for s in ("idle", "recording", "thinking", "done")}
+        self.status.button().setImage_(self._status_images["idle"])
 
         self._ticker = _Ticker.alloc().initWithHud_(self)
 
@@ -375,7 +401,7 @@ class Hud:
         if state != self._shown:
             was = self._shown
             self._shown = state
-            self.status.button().setTitle_(MENU_ICONS[state])
+            self.status.button().setImage_(self._status_images[state])
             self._menu_status.setTitle_(f"SamFlow — {MENU_LABELS[state]}")
             if state == "idle":
                 self.panel.orderOut_(None)
