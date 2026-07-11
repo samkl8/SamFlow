@@ -5,3 +5,8 @@ __pycache__/
 
 # Live launchd plists carry absolute paths; install.sh generates them fresh.
 launchd/
+
+# Persoonlijke woordenlijst + wat samflow leert. Blijft op deze machine.
+lexicon.txt
+mappings.txt
+candidates.json

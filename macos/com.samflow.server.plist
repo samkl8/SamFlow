@@ -11,7 +11,7 @@
     <array>
         <string>@@WHISPER_SERVER@@</string>
         <string>-m</string>
-        <string>@@SAMFLOW_DIR@@/models/ggml-large-v3-turbo-q5_0.bin</string>
+        <string>@@SAMFLOW_DIR@@/models/ggml-large-v3-turbo-q8_0.bin</string>
         <string>--host</string>
         <string>127.0.0.1</string>
         <string>--port</string>
@@ -20,6 +20,11 @@
         <string>@@LANGUAGE@@</string>
         <string>-t</string>
         <string>8</string>
+        <!-- beam search i.p.v. greedy: nauwkeuriger, kost ~50ms (ruim binnen budget) -->
+        <string>-bs</string>
+        <string>5</string>
+        <!-- woordenlijst de hele opname blijven meesturen, niet alleen het begin -->
+        <string>--carry-initial-prompt</string>
     </array>
 
     <key>RunAtLoad</key>

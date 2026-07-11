@@ -289,10 +289,20 @@ class Hud:
 
     def _place(self):
         """
-        Put the pill where the user is looking. Called once, at the moment the
-        pill appears - the caret cannot move while Fn is held, and repositioning
-        every frame would make it jitter.
+        Put the pill where the user is looking. Called at the moment the pill
+        appears (idle -> visible); the caret cannot move while Fn is held.
+
+        We rebuild the panel from scratch here every time, not just move it. A
+        panel created on a display that was later unplugged stays orphaned on
+        that gone display: setFrameOrigin_ + orderFrontRegardless then place it
+        nowhere you can see. A fresh panel against the current screen always
+        renders, and building one costs next to nothing. This is the belt to the
+        screen-change observer's braces: even if that notification never arrives,
+        every dictation still gets a panel that shows.
         """
+        if self.panel is not None:
+            self.panel.orderOut_(None)
+        self._build_panel()
         origin, _ = placement()
         self.panel.setFrameOrigin_(origin)
 

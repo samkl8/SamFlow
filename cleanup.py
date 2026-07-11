@@ -4,17 +4,20 @@ cleanup.py - turn a raw Whisper transcript into text you'd actually have typed.
 
 Two layers, applied in this order:
 
-  1. VOCAB   fed to Whisper as an initial prompt, biasing the decoder toward our
-             jargon *before* it guesses. Costs nothing, no latency, fixes most of it.
-  2. RULES   deterministic mop-up of what the decoder still gets wrong: phonetic
-             misses, filler words, stutters, silence hallucinations, capitalisation.
+  1. WOORDENLIJST  jouw termen (lexicon.py) gaan als initial prompt naar Whisper en
+                   sturen de decoder vóór hij gokt; achteraf snapt lexicon.canonicalise
+                   elke variant terug naar de juiste vorm (hoofdletters + splitsingen).
+  2. RULES         deterministische mop-up van wat de decoder nog fout doet: fonetische
+                   missers, stopwoorden, stotters, stilte-hallucinaties, hoofdletters.
 
-Editing VOCAB and REPLACEMENTS below is the whole tuning surface.
+De woordenlijst onderhoud je in lexicon.py / lexicon.txt, de rest hier.
 Run `python cleanup.py` to see the rules applied to a set of examples.
 """
 
 import re
 import unicodedata
+
+import lexicon
 
 # ---------- config ----------
 ENABLE_COMMANDS = True     # spoken "nieuwe regel" becomes an actual newline
@@ -22,32 +25,17 @@ ENABLE_STUTTER = True      # collapse "naar naar" -> "naar"
 # ----------------------------
 
 
-# Words Whisper does not know but you say all day. Order does not matter; keep it
-# short-ish, an over-long prompt eats decoder context and starts to hurt.
-#
-# >>> THIS IS THE LIST YOU PERSONALISE. <<<
-# Replace these examples with the terms YOU say that Whisper mishears: your product
-# names, tools, colleagues, project codenames, technical jargon. The examples below
-# are generic developer terms just to show the shape.
-VOCAB = [
-    "GitHub", "Kubernetes", "PostgreSQL", "nginx", "Redis", "Terraform",
-    "webhook", "GraphQL", "endpoint", "middleware", "OAuth", "JWT",
-    "repo", "commit", "branch", "rebase", "deploy", "staging",
-    "launchd", "systemd", "cronjob", "SDK", "API", "CLI",
-]
+# De woordenlijst zelf staat in lexicon.py (plus je persoonlijke lexicon.txt). Die
+# stuurt Whisper vooraf én corrigeert achteraf hoofdletters en splitsingen van elke
+# term. Een woord toevoegen doe je daar of via `samflow.py --review`, niet hier.
 
 
-# Phonetic misses the vocab prompt cannot reach. Keys are regexes matched
-# case-insensitively against word boundaries; values are the canonical spelling.
-# Add a line here every time you catch a wrong transcription - that is the loop.
-# The examples below are generic; replace them with your own mishearings.
+# Fonetische missers die noch de woordenlijst noch canonicalise() vangen -- de letters
+# liggen te ver weg, of het woord splitst op een niet-structurele plek ("launch d").
+# Persoonlijke gevallen leer je via `samflow.py --review` (schrijft naar mappings.txt);
+# dit zijn de ingebouwde. Elk patroon wordt afgedwongen door een voorbeeld in EXAMPLES.
 REPLACEMENTS = {
-    r"\bnpm\b": "npm",
-    r"\bgit ?hub\b": "GitHub",
-    r"\bpostgres(?:ql)?\b": "PostgreSQL",
-    r"\bgraph ?ql\b": "GraphQL",
     r"\blaunch ?d\b": "launchd",
-    r"\bo ?auth\b": "OAuth",
 }
 
 
@@ -83,8 +71,9 @@ STUTTER_ALLOW = {"dat", "die", "heel", "had"}
 
 
 def whisper_prompt() -> str:
-    """The initial_prompt handed to Whisper. A plain comma list conditions fine."""
-    return "Woordenlijst: " + ", ".join(VOCAB) + "."
+    """The initial_prompt handed to Whisper. A plain comma list conditions fine.
+    Terms come from lexicon.py: built-in defaults plus your personal lexicon.txt."""
+    return "Woordenlijst: " + ", ".join(lexicon.terms()) + "."
 
 
 def _join_segments(text: str) -> str:
@@ -131,6 +120,9 @@ def clean(text: str) -> str:
 
     text = re.sub(FILLERS, " ", text, flags=re.IGNORECASE)
 
+    # snap elke variant van je woordenlijst-termen terug naar de juiste vorm
+    text = lexicon.canonicalise(text)
+
     for pattern, canonical in REPLACEMENTS.items():
         text = re.sub(pattern, canonical, text, flags=re.IGNORECASE)
 
@@ -151,9 +143,12 @@ def clean(text: str) -> str:
 
 
 EXAMPLES = [
-    "Dit is een test van de git hub repo die naar postgres dispatcht.",
-    " uh dus ik wil dat de git hub repo uh pusht naar naar staging",
-    "zet de teller op nul en push naar de branch nieuwe regel dat was het",
+    "ik push de git hub repo van godu naar staging",       # canonicalise: git hub -> GitHub
+    "check de market os webhook en de tam rank crawl",      # canonicalise: MarketOS, TamRank
+    "de batch jet export draait op sam os via launch d",    # canon: BatchJet, sam-os; regel: launchd
+    "ik ga naar de markt en dat is meta genoeg",            # GEEN valse treffer: markt/meta blijven
+    " uh dus ik wil dat de repo uh pusht naar naar staging",
+    "zet de teller op nul en push nieuwe regel dat was het",
     "het feit dat dat werkt is mooi",
     " Dit is een test van de git\nhub repo.\n",       # in-word break
     " Eerste zin over de deploy.\n Ik ga naar huis.\n",  # segment boundary

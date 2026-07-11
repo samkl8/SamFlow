@@ -50,6 +50,7 @@ from Quartz import (
 import audiodev
 import cleanup
 import hud as hud_module
+import lexicon
 import media as media_module
 
 # ---------- config ----------
@@ -244,6 +245,9 @@ def handle(audio: np.ndarray, do_paste: bool = True):
         print(f"  ({seconds:.1f}s spraak, niets bruikbaars: {raw.strip()!r})")
         hud_state("idle")
         return
+
+    # onthoud wat we nog niet kenden; voer voor `samflow.py --review` (zie lexicon.py)
+    lexicon.record(raw)
 
     print(f"  [{seconds:.1f}s spraak -> {took:.2f}s] {text}")
     if do_paste:
@@ -441,6 +445,8 @@ def main():
     ap.add_argument("--check", action="store_true", help="rechten, mic en server verifiëren")
     ap.add_argument("--grant", action="store_true", help="macOS om de rechten vragen")
     ap.add_argument("--once", action="store_true", help="één dictaat opnemen en printen")
+    ap.add_argument("--review", action="store_true",
+                    help="vaak-gehoorde onbekende woorden afhandelen (de leer-loop)")
     args = ap.parse_args()
 
     if args.check:
@@ -448,6 +454,10 @@ def main():
 
     if args.grant:
         sys.exit(grant())
+
+    if args.review:
+        lexicon.review()
+        return
 
     if args.once:
         rec = Recorder()

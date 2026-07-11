@@ -11,8 +11,8 @@ set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOME_DIR="$HOME"
-MODEL_URL="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin"
-MODEL="$DIR/models/ggml-large-v3-turbo-q5_0.bin"
+MODEL_URL="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q8_0.bin"
+MODEL="$DIR/models/ggml-large-v3-turbo-q8_0.bin"
 APP="$HOME/Applications/SamFlow.app"
 LAUNCHD="$HOME/Library/LaunchAgents/com.samflow.server.plist"
 

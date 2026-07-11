@@ -6,8 +6,10 @@ venster. Drie processen: `samflow.py` (Fn-tap + mic + plakken), `whisper-server`
 model), `cleanup.py` (vocab-prompt + regels). Alles blijft op deze machine.
 
 ## Vaste instellingen
-- **Model:** `models/ggml-large-v3-turbo-q5_0.bin`, bediend door `whisper-server` op
-  `127.0.0.1:8181`. Warm houden is niet optioneel: koud kost een dictaat 11s, warm 0,5s.
+- **Model:** `models/ggml-large-v3-turbo-q8_0.bin`, bediend door `whisper-server` op
+  `127.0.0.1:8181` met beam search (`-bs 5`). Warm houden is niet optioneel: koud kost een
+  dictaat 11s, warm 0,5s. Gemeten: q8 i.p.v. q5 is strikt preciezer, níét trager (q8_0
+  dequantiseert simpeler op Metal) en kost ~+390 MB RAM. Beam search kost ~50 ms.
 - **Python:** de venv draait op een **door uv beheerde** 3.12, niet die van Homebrew.
   Zie "De TCC-val" in `README.md` — verander dit niet zonder die sectie te lezen.
 - **Taal:** `LANGUAGE = "nl"` in `samflow.py`.
@@ -22,12 +24,17 @@ Dit is de onderhoudslus van het project. Hoor je een woord dat er verkeerd uitko
    ```
    De ruwe string bevat newlines en leidende spaties die je in de nette output niet ziet.
 3. Kies de juiste laag:
-   - Is het een woord dat Whisper simpelweg niet kent? → toevoegen aan `VOCAB`. Dit is
-     altijd de eerste keuze: nul latency, nul kosten. Houd de lijst kort.
-   - Blijft het na een `VOCAB`-toevoeging fout gaan (fonetisch te ver weg, zoals `git hab`
-     voor `GitHub`)? → een regel in `REPLACEMENTS`.
-4. Voeg het geval toe aan `EXAMPLES` in `cleanup.py` en draai `python cleanup.py`. Elk
-   opgelost geval hoort daar te blijven staan.
+   - Is het een woord dat Whisper niet kent, of mist alleen de hoofdletters/splitsing?
+     → zet de canonieke vorm in `lexicon.txt`. `lexicon.canonicalise` snapt voortaan elke
+     variant terug (`market os`, `marketos` → `MarketOS`). Nul latency, en het werkt bij
+     het volgende dictaat — geen herstart (de lijst wordt per dictaat herlezen).
+   - Blijft het fonetisch te ver weg (je zegt Klaviyo, er komt `klavijo`)? → een mapping
+     `klavijo = Klaviyo` in `mappings.txt`.
+4. De makkelijke route voor beide: `python samflow.py --review`. Samflow heeft onbekende
+   woorden die je vaak zei al geteld en stelt ze voor; jij kiest toevoegen of mappen.
+5. Voor een ingebouwde default of regel: voeg 'm toe aan `DEFAULT_TERMS` (lexicon.py) of
+   `REPLACEMENTS` (cleanup.py) én aan `EXAMPLES` in `cleanup.py`, en draai
+   `python cleanup.py`. Elk opgelost geval hoort daar te blijven staan.
 
 ## Regels bij het aanpassen van cleanup.py
 - **Wijzig nooit een regex zonder een voorbeeld toe te voegen dat 'm afdwingt.** Elk
@@ -40,6 +47,25 @@ Dit is de onderhoudslus van het project. Hoor je een woord dat er verkeerd uitko
   hele discriminator. Verifieer met een echte transcriptie voordat je dit aanraakt.
 - De `HALLUCINATIONS`-lijst mag alleen de **volledige** output afkeuren, nooit een deel ervan.
   `Ga naar example.com` moet blijven staan; kale `Www.Nil.Com.Br` niet.
+
+## Regels bij het aanpassen van lexicon.py
+- **De corrector mag nóóit een woord buiten de lijst aanraken.** Dat is de hele belofte.
+  `canonicalise` matcht alleen de letters van een term die de gebruiker zélf toevoegde, en
+  tolereert een spatie/koppelteken uitsluitend op de eigen grenzen van de term (camelCase,
+  cijfer, koppelteken). Daarom wordt `de markt` nooit `MarketOS`. Raak je dit aan, voeg dan
+  een voorbeeld toe dat een echt Nederlands woord met rust laat (zie de `markt/meta`-regel
+  in `EXAMPLES` van cleanup.py).
+- **Termen die óók een gewoon woord zijn horen in `AMBIGUOUS`.** Die gaan wel mee in de
+  Whisper-prompt maar worden niet overal met hoofdletter geforceerd (`meta` → niet `Meta`).
+- **lexicon.txt en mappings.txt zijn persoonlijk en staan buiten git.** De ingebouwde
+  basislijst is `DEFAULT_TERMS` (wél getrackt). Een bijna-leeg lexicon.txt is normaal: de
+  leer-loop en handmatige toevoegingen vullen het.
+- **De bestanden worden per dictaat opnieuw gelezen (mtime-cache).** Een woord toevoegen
+  werkt dus meteen, zonder herstart. Sloop de cache-sleutel op mtime niet weg, anders moet
+  je weer herstarten voor elke wijziging.
+- De leer-loop (`record`) telt alleen woorden die niet bekend en niet in `STOPWORDS` staan.
+  Die lijst hoeft niet volledig — hij haalt de grootste ruis eruit; de rest negeer je in
+  `--review`. `AUTO_PROMOTE` staat bewust uit: automatisch toevoegen pakt ook rommel.
 
 ## Regels bij het aanpassen van samflow.py
 - **Nooit stilte naar Whisper sturen.** Het model verzint dan zinnen (echt gebeurd:
@@ -63,13 +89,15 @@ Dit is de onderhoudslus van het project. Hoor je een woord dat er verkeerd uitko
   door een eigen loop naast `CFRunLoopRun()` — dan mist de Fn-tap events.
 - De balken worden gevoed door de échte mic-RMS. Vervang dat niet door een animatie: het feit
   dat ze alleen bewegen als de microfoon je hoort, is precies de diagnostische waarde.
-- **Bouw het paneel opnieuw als het scherm wisselt.** Een `NSPanel` die is aangemaakt terwijl er
-  nog een extern scherm hing, blijft na het loskoppelen verweesd op dat verdwenen scherm:
-  `orderFrontRegardless()` mét een geldige `setFrameOrigin_` toont hem dan niet meer op het
-  overgebleven scherm — de pill "gaat niet mee" en lijkt helemaal weg. `_rebuild_panel()` hangt
-  daarom aan `NSApplicationDidChangeScreenParametersNotification` en maakt een vers paneel tegen
-  de huidige topologie. Verwijder die observer niet: zonder hem is de enige remedie de daemon
-  herstarten. (De placement-wiskunde is hier onschuldig — die leest de schermen elk dictaat live.)
+- **Bouw het paneel vers op elk moment dat de pill verschijnt.** Een `NSPanel` die is aangemaakt
+  terwijl er nog een extern scherm hing, blijft na het loskoppelen verweesd op dat verdwenen
+  scherm: `orderFrontRegardless()` mét een geldige `setFrameOrigin_` toont hem dan niet meer op
+  het overgebleven scherm — de pill lijkt helemaal weg. Daarom bouwt `_place()` het paneel bij
+  élke idle→zichtbaar-overgang opnieuw op (kost niets, en een vers paneel rendert altijd). De
+  observer op `NSApplicationDidChangeScreenParametersNotification` (`_rebuild_panel`) is het extra
+  vangnet voor een schermwissel terwijl de pill al zichtbaar is. Vertrouw niet op die notificatie
+  alléén: gebleken is dat 'ie niet altijd aankomt, en dan was de pill weer weg. (De placement-
+  wiskunde is onschuldig — die leest de schermen elk dictaat live.)
 
 ## Regels bij het aanpassen van focus.py
 - **Quartz telt y naar beneden vanaf het hoofdscherm, Cocoa naar boven.** `to_cocoa()` is de
