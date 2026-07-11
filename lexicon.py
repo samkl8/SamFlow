@@ -8,23 +8,23 @@ doet twee dingen tegelijk:
   1. STUREN   -> de termen gaan als woordenlijst mee in de Whisper-prompt, zodat
                  de decoder ze al kent voordat hij gokt (nul latency).
   2. SNAPPEN  -> na de transcriptie snapt canonicalise() elke variant terug naar
-                 de juiste vorm: hoofdletters en splitsingen. "market os",
-                 "marketos", "Market OS" -> allemaal "MarketOS".
+                 de juiste vorm: hoofdletters en splitsingen. "graph ql",
+                 "graphql", "Graph QL" -> allemaal "GraphQL".
 
 De harde regel: de corrector raakt NOOIT een gewoon Nederlands woord aan. Hij
 matcht alleen de letters van een term die JIJ hebt toegevoegd, en tolereert daar
 alleen een spatie/koppelteken op de plekken waar de term zelf al een grens heeft
-(camelCase, cijfer, koppelteken). "de markt" wordt dus nooit "MarketOS".
+(camelCase, cijfer, koppelteken). Een gewoon woord blijft dus altijd staan.
 
-Wat de corrector niet vangt zijn fonetische missers (je zegt Klaviyo, Whisper
-tikt "klavijo"): die letters lijken niet genoeg. Daarvoor is mappings.txt -- een
+Wat de corrector niet vangt zijn fonetische missers (je zegt GitHub, Whisper
+tikt "gitub"): die letters lijken niet genoeg. Daarvoor is mappings.txt -- een
 geleerde "gehoorde vorm = Canoniek". Die groeit via `samflow.py --review`, dat je
 de woorden voorstelt die je vaak zei maar samflow nog niet kende.
 
 Drie bestanden, alle naast deze code en alle buiten git (persoonlijk):
 
   lexicon.txt      jouw termen, canonieke schrijfwijze, een per regel (# = comment)
-  mappings.txt     "klavijo = Klaviyo", voor fonetische missers
+  mappings.txt     "gitub = GitHub", voor fonetische missers
   candidates.json  telt wat je vaak zei maar nog niet kent; voer voor --review
 
 lexicon.txt en mappings.txt worden per dictaat opnieuw gelezen (mtime-cache), dus
@@ -47,12 +47,13 @@ CANDIDATE_MIN_LEN = 4       # korter dan dit is zelden jargon
 REVIEW_TOP = 15             # hoeveel kandidaten --review toont
 # ----------------------------
 
-# Ingebouwde basislijst. lexicon.txt (persoonlijk, buiten git) vult 'm aan.
+# Neutrale basislijst -- generieke termen die iedereen kan gebruiken. Personaliseer
+# via lexicon.txt (persoonlijk, buiten git): daar horen je eigen jargon, merken en
+# projectnamen. Houd deze lijst neutraal, zodat de repo deelbaar blijft.
 DEFAULT_TERMS = [
-    "godu", "sam-os", "cmux", "MarketOS", "TamRank", "Brevo", "BatchJet",
-    "Klaviyo", "Shopify", "Granola", "Meta", "GA4",
-    "Claude", "GitHub", "MCP", "repo", "commit", "deploy", "staging",
-    "webhook", "endpoint", "API",
+    "GitHub", "GitLab", "GraphQL", "PostgreSQL", "TypeScript", "JavaScript",
+    "OAuth", "npm", "API", "URL", "SDK", "CLI",
+    "repo", "commit", "branch", "deploy", "staging", "webhook", "endpoint",
 ]
 
 # Termen die óók een gewoon woord zijn: wel meesturen in de prompt, maar niet
@@ -111,7 +112,7 @@ def terms():
 
 
 def mappings():
-    """Gehoorde vorm -> canoniek, uit mappings.txt ('klavijo = Klaviyo')."""
+    """Gehoorde vorm -> canoniek, uit mappings.txt ('gitub = GitHub')."""
     def build(lines):
         out = {}
         for ln in lines:
@@ -130,7 +131,7 @@ _regex_cache = {}
 
 def _parts(term):
     """Splits een term op zijn eigen grenzen: koppelteken, camelCase, cijfergrens.
-    'MarketOS' -> ['Market','OS'];  'sam-os' -> ['sam','os'];  'GA4' -> ['GA','4']."""
+    'GitHub' -> ['Git','Hub'];  'well-known' -> ['well','known'];  'oauth2' -> ['oauth','2']."""
     s = term.replace("-", " ")
     s = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", s)      # camelCase
     s = re.sub(r"(?<=[A-Za-z])(?=[0-9])", " ", s)   # letter -> cijfer
@@ -283,5 +284,5 @@ if __name__ == "__main__":
     else:
         print("termen:", terms())
         print("mappings:", mappings())
-        for probe in ["market os", "de markt", "klavijo", "een meta-analyse", "GA 4"]:
+        for probe in ["graph ql", "type script", "de markt", "git hub", "well known"]:
             print(f"  {probe!r:20} -> {canonicalise(probe)!r}")

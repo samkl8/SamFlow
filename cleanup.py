@@ -143,10 +143,10 @@ def clean(text: str) -> str:
 
 
 EXAMPLES = [
-    "ik push de git hub repo van godu naar staging",       # canonicalise: git hub -> GitHub
-    "check de market os webhook en de tam rank crawl",      # canonicalise: MarketOS, TamRank
-    "de batch jet export draait op sam os via launch d",    # canon: BatchJet, sam-os; regel: launchd
-    "ik ga naar de markt en dat is meta genoeg",            # GEEN valse treffer: markt/meta blijven
+    "ik push de git hub repo naar staging",                 # canonicalise: git hub -> GitHub
+    "de graph ql endpoint praat met de type script sdk",    # canonicalise: GraphQL, TypeScript, SDK
+    "dat draait als cronjob via launch d",                  # REPLACEMENTS: launch d -> launchd
+    "we hebben een centrale hub in het netwerk",            # GEEN valse treffer: 'hub' != GitHub
     " uh dus ik wil dat de repo uh pusht naar naar staging",
     "zet de teller op nul en push nieuwe regel dat was het",
     "het feit dat dat werkt is mooi",

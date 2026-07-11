@@ -21,7 +21,11 @@ directly. Background threads only write to Hud.state / Hud.level, and a 30 fps
 timer on the main thread reads them and redraws.
 """
 
+import json
 import math
+import os
+import shlex
+import subprocess
 import sys
 import threading
 import time
@@ -39,6 +43,7 @@ from AppKit import (
 from Foundation import NSNotificationCenter, NSObject
 
 import focus
+import lexicon
 
 # ---------- config ----------
 PILL_W, PILL_H = 168.0, 46.0
@@ -191,6 +196,27 @@ class _Ticker(NSObject):
     def screensChanged_(self, _note):
         self.hud._rebuild_panel()
 
+    # --- menu-acties. Draaien op de main thread (het zijn menu-clicks), maar het
+    #     echte werk gaat naar losse processen zodat het menu nooit blokkeert.
+    def editLexicon_(self, _sender):
+        subprocess.Popen(["open", "-t", lexicon.LEXICON_FILE])
+
+    def reviewWords_(self, _sender):
+        # --review is interactief, dus in een echte Terminal, niet in dit proces.
+        base = os.path.dirname(os.path.abspath(__file__))
+        cmd = f"cd {shlex.quote(base)} && {shlex.quote(sys.executable)} samflow.py --review"
+        subprocess.Popen([
+            "osascript",
+            "-e", 'tell application "Terminal" to activate',
+            "-e", f'tell application "Terminal" to do script {json.dumps(cmd)}',
+        ])
+
+    def openPermissions_(self, _sender):
+        subprocess.Popen([
+            "open",
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+        ])
+
     def quit_(self, _sender):
         NSApplication.sharedApplication().terminate_(None)
 
@@ -314,6 +340,17 @@ class Hud:
             "SamFlow — klaar", None, "")
         self._menu_status.setEnabled_(False)
         menu.addItem_(self._menu_status)
+
+        menu.addItem_(NSMenuItem.separatorItem())
+
+        def _item(title, selector):
+            it = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(title, selector, "")
+            it.setTarget_(self._ticker)
+            menu.addItem_(it)
+
+        _item("Woordenlijst bewerken…", "editLexicon:")
+        _item("Vaak gehoorde woorden reviewen…", "reviewWords:")
+        _item("Permissies…", "openPermissions:")
 
         menu.addItem_(NSMenuItem.separatorItem())
 

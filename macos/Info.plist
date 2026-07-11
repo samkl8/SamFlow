@@ -10,6 +10,8 @@
     <string>com.samflow.app</string>
     <key>CFBundleExecutable</key>
     <string>SamFlow</string>
+    <key>CFBundleIconFile</key>
+    <string>SamFlow</string>
     <key>CFBundleShortVersionString</key>
     <string>1.0</string>
     <key>CFBundleVersion</key>
