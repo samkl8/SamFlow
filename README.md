@@ -82,7 +82,7 @@ open -a ~/Applications/SamFlow.app
 
 Hold **Fn**, speak, release. A pill appears near your cursor with live audio bars, then
 the text is pasted where you were typing. A menu-bar dot (`◌`) shows status; click it to
-see state or quit.
+see state, copy your last dictation (in case you pasted into the void), or quit.
 
 ```bash
 ./.venv/bin/python samflow.py           # run in the foreground (dev)

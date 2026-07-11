@@ -34,8 +34,8 @@ import objc
 from AppKit import (
     NSApplication, NSApplicationActivationPolicyAccessory,
     NSApplicationDidChangeScreenParametersNotification, NSBackingStoreBuffered,
-    NSBezierPath, NSColor, NSImage, NSMakeRect, NSMenu, NSMenuItem, NSPanel, NSScreen,
-    NSStatusBar, NSTimer, NSView,
+    NSBezierPath, NSColor, NSImage, NSMakeRect, NSMenu, NSMenuItem, NSPanel,
+    NSPasteboard, NSPasteboardTypeString, NSScreen, NSStatusBar, NSTimer, NSView,
     NSWindowCollectionBehaviorCanJoinAllSpaces, NSWindowCollectionBehaviorFullScreenAuxiliary,
     NSWindowCollectionBehaviorStationary, NSWindowStyleMaskBorderless,
     NSWindowStyleMaskNonactivatingPanel,
@@ -241,6 +241,20 @@ class _Ticker(NSObject):
             "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
         ])
 
+    def copyLastText_(self, _sender):
+        # Vangnet: paste() geeft het klembord na het plakken terug aan de vorige
+        # eigenaar, dus wie zijn dictaat wegklikt is het anders echt kwijt.
+        text = self.hud.last_text()
+        if text:
+            pb = NSPasteboard.generalPasteboard()
+            pb.clearContents()
+            pb.setString_forType_(text, NSPasteboardTypeString)
+
+    def validateMenuItem_(self, item):
+        if item.action() == "copyLastText:":
+            return self.hud.last_text() is not None
+        return True
+
     def quit_(self, _sender):
         NSApplication.sharedApplication().terminate_(None)
 
@@ -252,6 +266,7 @@ class Hud:
         self._level = 0.0
         self._shown = None
         self._done_until = 0.0
+        self._last_text = None
         self.panel = None
 
     # --- called from any thread -------------------------------------------
@@ -267,6 +282,15 @@ class Hud:
         with self._lock:
             # ease upward fast, fall back slowly, or the bars look like static
             self._level = max(min(level, 1.0), self._level * 0.75)
+
+    def set_last_text(self, text: str):
+        # Alleen in het geheugen, nooit op schijf: dictaten zijn persoonlijk.
+        with self._lock:
+            self._last_text = text
+
+    def last_text(self):
+        with self._lock:
+            return self._last_text
 
     def snapshot(self):
         with self._lock:
@@ -373,6 +397,10 @@ class Hud:
             it = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(title, selector, "")
             it.setTarget_(self._ticker)
             menu.addItem_(it)
+
+        _item("Kopieer laatste dictaat", "copyLastText:")
+
+        menu.addItem_(NSMenuItem.separatorItem())
 
         _item("Woordenlijst bewerken…", "editLexicon:")
         _item("Vaak gehoorde woorden reviewen…", "reviewWords:")

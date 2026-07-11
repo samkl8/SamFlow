@@ -135,6 +135,7 @@ def paste(text: str):
 
     pb.clearContents()
     pb.setString_forType_(text, NSPasteboardTypeString)
+    change = pb.changeCount()
 
     for down in (True, False):
         ev = CGEventCreateKeyboardEvent(None, KEY_V, down)
@@ -143,7 +144,10 @@ def paste(text: str):
 
     def restore():
         time.sleep(CLIPBOARD_RESTORE_SEC)
-        if previous is not None:
+        # Alleen terugzetten als het klembord nog van ons is. Heeft iemand het
+        # intussen geclaimd ("Kopieer laatste dictaat", of een eigen Cmd+C), dan
+        # zou terugzetten die verse kopie vernietigen.
+        if previous is not None and pb.changeCount() == change:
             pb.clearContents()
             pb.setString_forType_(previous, NSPasteboardTypeString)
 
@@ -250,6 +254,8 @@ def handle(audio: np.ndarray, do_paste: bool = True):
     lexicon.record(raw)
 
     print(f"  [{seconds:.1f}s spraak -> {took:.2f}s] {text}")
+    if HUD:
+        HUD.set_last_text(text)
     if do_paste:
         paste(text)
         cue("done")
