@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SamFlow — app-schil mockup</title>
+</head>
+<body>
+<style>
+  :root {
+    --stage-1:#EDECEF; --stage-2:#E3E1E6;
+    --ground:#F1F0F3; --surface:#FFFFFF; --sunken:#F6F5F8;
+    --ink:#1C1B20; --muted:#6C6B74; --faint:#98979F;
+    --hairline:rgba(20,18,30,0.10); --hairline-strong:rgba(20,18,30,0.16);
+    --accent:#E5463C; --accent-ink:#FFFFFF;
+    --rec:#E5463C; --think:#2F72E0; --done:#1B9E48; --idle:#9A9AA0;
+    --titlebar:#E9E8EC; --shadow:rgba(30,20,25,0.24);
+    --chip:#EFEEF1;
+    --sys-serif: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --sys-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --stage-1:#131315; --stage-2:#1B1B1E;
+      --ground:#202024; --surface:#2A2A30; --sunken:#242429;
+      --ink:#F1F1F4; --muted:#9C9BA4; --faint:#77767E;
+      --hairline:rgba(255,255,255,0.09); --hairline-strong:rgba(255,255,255,0.16);
+      --accent:#FF5A50; --accent-ink:#1a0f0e;
+      --rec:#FF5A50; --think:#73A6FF; --done:#4CD972; --idle:#8A8A90;
+      --titlebar:#2F2E34; --shadow:rgba(0,0,0,0.55);
+      --chip:#34333A;
+    }
+  }
+  :root[data-theme="light"] {
+    --stage-1:#EDECEF; --stage-2:#E3E1E6;
+    --ground:#F1F0F3; --surface:#FFFFFF; --sunken:#F6F5F8;
+    --ink:#1C1B20; --muted:#6C6B74; --faint:#98979F;
+    --hairline:rgba(20,18,30,0.10); --hairline-strong:rgba(20,18,30,0.16);
+    --accent:#E5463C; --accent-ink:#FFFFFF;
+    --rec:#E5463C; --think:#2F72E0; --done:#1B9E48; --idle:#9A9AA0;
+    --titlebar:#E9E8EC; --shadow:rgba(30,20,25,0.24); --chip:#EFEEF1;
+  }
+  :root[data-theme="dark"] {
+    --stage-1:#131315; --stage-2:#1B1B1E;
+    --ground:#202024; --surface:#2A2A30; --sunken:#242429;
+    --ink:#F1F1F4; --muted:#9C9BA4; --faint:#77767E;
+    --hairline:rgba(255,255,255,0.09); --hairline-strong:rgba(255,255,255,0.16);
+    --accent:#FF5A50; --accent-ink:#1a0f0e;
+    --rec:#FF5A50; --think:#73A6FF; --done:#4CD972; --idle:#8A8A90;
+    --titlebar:#2F2E34; --shadow:rgba(0,0,0,0.55); --chip:#34333A;
+  }
+
+  * { box-sizing:border-box; }
+  body {
+    margin:0; font-family:var(--sys-serif); color:var(--ink);
+    background:
+      radial-gradient(120% 90% at 50% -10%, var(--stage-2), var(--stage-1) 65%);
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+    min-height:100vh;
+  }
+  .wrap { max-width:1120px; margin:0 auto; padding:48px 24px 80px; }
+
+  /* ---- framing ---- */
+  .lede { max-width:640px; margin:0 auto 40px; text-align:center; }
+  .eyebrow {
+    font-size:12px; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--accent); font-weight:600; margin:0 0 12px;
+  }
+  h1 { font-size:29px; line-height:1.15; margin:0 0 12px; letter-spacing:-.01em; text-wrap:balance; font-weight:700; }
+  .lede p { font-size:15px; line-height:1.55; color:var(--muted); margin:0; text-wrap:pretty; }
+
+  /* ---- menubar strip ---- */
+  .menubar {
+    max-width:900px; margin:0 auto 30px; height:26px; border-radius:8px;
+    background:var(--surface); box-shadow:0 1px 0 var(--hairline), 0 8px 24px -18px var(--shadow);
+    display:flex; align-items:center; justify-content:flex-end; gap:16px;
+    padding:0 12px; font-size:12.5px; color:var(--muted);
+  }
+  .menubar .extra { display:flex; align-items:center; gap:6px; }
+  .menubar .active { color:var(--ink); font-weight:600; }
+
+  /* ---- the SamFlow bars mark ---- */
+  .bars { display:inline-flex; align-items:flex-end; gap:2px; height:14px; }
+  .bars i { width:2.6px; border-radius:2px; background:currentColor; display:block; }
+  .bars i:nth-child(1){ height:42%; } .bars i:nth-child(2){ height:72%; }
+  .bars i:nth-child(3){ height:100%; } .bars i:nth-child(4){ height:60%; }
+
+  /* ---- stage grid ---- */
+  .stage { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:34px 40px; align-items:start; }
+  @media (max-width:860px){ .stage { grid-template-columns:1fr; } }
+  .col { display:flex; flex-direction:column; gap:14px; }
+  .cap { font-size:12.5px; line-height:1.5; color:var(--muted); padding:0 4px; }
+  .cap b { color:var(--ink); font-weight:600; }
+  .cap .flag { color:var(--accent); }
+
+  /* ---- window chrome ---- */
+  .win {
+    background:var(--ground); border-radius:12px; overflow:hidden;
+    box-shadow:0 0 0 0.5px var(--hairline-strong), 0 40px 70px -40px var(--shadow), 0 12px 30px -22px var(--shadow);
+    animation:rise .5s cubic-bezier(.2,.7,.2,1) both;
+  }
+  .titlebar {
+    height:38px; background:var(--titlebar); display:flex; align-items:center; gap:8px;
+    padding:0 14px; border-bottom:0.5px solid var(--hairline);
+  }
+  .lights { display:flex; gap:8px; }
+  .lights span { width:12px; height:12px; border-radius:50%; display:block; }
+  .lights .r{ background:# FF5F57; background:#FF5F57; } .lights .y{ background:#FEBC2E; } .lights .g{ background:#28C840; }
+  @media (prefers-color-scheme: dark){ .lights span{ box-shadow:inset 0 0 0 0.5px rgba(0,0,0,.25);} }
+  .wintitle { font-size:13px; font-weight:600; color:var(--ink); margin:0 auto; padding-right:40px; letter-spacing:.01em; }
+  .winbody { padding:20px; }
+
+  /* ---- onboarding ---- */
+  .hero { display:flex; gap:14px; align-items:flex-start; margin-bottom:16px; }
+  .glyph {
+    width:46px; height:46px; border-radius:12px; flex:0 0 auto;
+    background:linear-gradient(160deg, #2a2a2e, #131315);
+    display:flex; align-items:center; justify-content:center; color:var(--rec);
+    box-shadow:inset 0 0 0 0.5px rgba(255,255,255,.08), 0 6px 16px -8px var(--shadow);
+  }
+  .glyph .bars { height:20px; } .glyph .bars i{ width:3.4px; }
+  .hero h2 { font-size:18px; margin:2px 0 5px; letter-spacing:-.01em; }
+  .hero p { margin:0; font-size:13px; line-height:1.5; color:var(--muted); }
+
+  .privacy {
+    display:inline-flex; align-items:center; gap:7px; font-size:12px; font-weight:600;
+    color:var(--done); background:color-mix(in srgb, var(--done) 12%, transparent);
+    padding:5px 10px; border-radius:999px; margin-bottom:16px;
+  }
+
+  .steps { display:flex; flex-direction:column; gap:8px; }
+  .step {
+    display:flex; align-items:center; gap:12px; background:var(--surface);
+    border-radius:10px; padding:12px 14px; box-shadow:0 0 0 0.5px var(--hairline);
+  }
+  .dot { width:22px; height:22px; border-radius:50%; flex:0 0 auto; display:flex; align-items:center; justify-content:center; font-size:13px; }
+  .dot.ok { background:var(--done); color:#fff; }
+  .dot.wait { background:transparent; box-shadow:inset 0 0 0 2px var(--hairline-strong); color:var(--faint); }
+  .step .txt { flex:1 1 auto; min-width:0; }
+  .step .txt b { display:block; font-size:13.5px; font-weight:600; }
+  .step .txt span { display:block; font-size:12px; color:var(--muted); margin-top:1px; }
+  .btn {
+    font-family:inherit; font-size:12.5px; font-weight:600; border:none; cursor:pointer;
+    padding:6px 13px; border-radius:8px; background:var(--chip); color:var(--ink);
+    box-shadow:0 0 0 0.5px var(--hairline); white-space:nowrap;
+  }
+  .btn.mini { padding:5px 11px; font-size:12px; }
+  .btn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+
+  .keycap {
+    font-family:var(--sys-mono); font-size:12px; font-weight:600; color:var(--ink);
+    background:var(--surface); border-radius:6px; padding:3px 9px;
+    box-shadow:0 0 0 0.5px var(--hairline-strong), 0 1.5px 0 var(--hairline-strong);
+  }
+
+  .cta {
+    margin-top:16px; display:flex; align-items:center; gap:12px; justify-content:space-between;
+    flex-wrap:wrap;
+  }
+  .btn.primary { background:var(--accent); color:var(--accent-ink); box-shadow:0 6px 16px -8px var(--accent); padding:9px 18px; font-size:13.5px; }
+  .cta .hint { font-size:12px; color:var(--muted); }
+
+  /* ---- preferences ---- */
+  .group { display:flex; flex-direction:column; gap:0; background:var(--surface); border-radius:10px; overflow:hidden; box-shadow:0 0 0 0.5px var(--hairline); }
+  .group + .glabel { margin-top:18px; }
+  .glabel { font-size:11.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--faint); font-weight:600; margin:0 0 8px 4px; }
+  .row { display:flex; align-items:center; gap:14px; padding:11px 14px; min-height:44px; }
+  .row + .row { border-top:0.5px solid var(--hairline); }
+  .row .label { flex:1 1 auto; min-width:0; }
+  .row .label b { font-size:13.5px; font-weight:500; display:block; }
+  .row .label span { font-size:11.5px; color:var(--muted); display:block; margin-top:1px; }
+
+  /* switch */
+  .sw { width:38px; height:23px; border-radius:999px; background:var(--hairline-strong); position:relative; flex:0 0 auto; transition:background .18s; }
+  .sw::after { content:""; position:absolute; top:2px; left:2px; width:19px; height:19px; border-radius:50%; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.3); transition:left .18s; }
+  .sw.on { background:var(--accent); } .sw.on::after { left:17px; }
+
+  /* segmented */
+  .seg { display:inline-flex; background:var(--chip); border-radius:8px; padding:2px; gap:2px; box-shadow:0 0 0 0.5px var(--hairline); }
+  .seg button { font-family:inherit; font-size:12.5px; font-weight:500; border:none; background:transparent; color:var(--muted); padding:5px 12px; border-radius:6px; cursor:pointer; }
+  .seg button.sel { background:var(--surface); color:var(--ink); font-weight:600; box-shadow:0 1px 2px rgba(0,0,0,.15), 0 0 0 0.5px var(--hairline); }
+
+  /* dropdown */
+  .drop { display:inline-flex; align-items:center; gap:8px; font-size:12.5px; font-weight:500; background:var(--surface); color:var(--ink); padding:6px 10px; border-radius:7px; box-shadow:0 0 0 0.5px var(--hairline-strong); }
+  .drop .chev { color:var(--faint); font-size:10px; }
+
+  .winfoot { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:16px; padding-top:14px; border-top:0.5px solid var(--hairline); font-size:12px; color:var(--faint); }
+  .winfoot a { color:var(--accent); text-decoration:none; font-weight:600; }
+
+  /* ---- pill states strip ---- */
+  .pillstrip { grid-column:1 / -1; margin-top:8px; }
+  .pillstrip .glabel { text-align:left; }
+  .pills { display:flex; gap:16px; flex-wrap:wrap; }
+  .pillcard { display:flex; flex-direction:column; align-items:center; gap:8px; }
+  .pill {
+    width:132px; height:40px; border-radius:20px; background:rgba(22,22,24,0.9);
+    display:flex; align-items:center; justify-content:center; gap:5px;
+    box-shadow:inset 0 0 0 0.5px rgba(255,255,255,.10), 0 10px 24px -14px var(--shadow);
+  }
+  .pill .b { width:5px; border-radius:3px; }
+  .pill .pdot { width:7px; height:7px; border-radius:50%; }
+  .pill .tick { color:var(--done); font-size:17px; font-weight:700; }
+  .pilllabel { font-size:11.5px; color:var(--muted); }
+  .rec-dot { animation:pulse 1.4s ease-in-out infinite; }
+
+  @keyframes rise { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
+  @keyframes pulse { 0%,100%{ opacity:.5; } 50%{ opacity:1; } }
+  @media (prefers-reduced-motion: reduce){ *{ animation:none !important; } }
+
+  .foot { text-align:center; margin-top:44px; font-size:12px; color:var(--faint); }
+</style>
+
+<div class="wrap">
+  <div class="lede">
+    <p class="eyebrow">SamFlow · voorstel app-schil</p>
+    <h1>Een echt venster in plaats van een tekstbestand</h1>
+    <p>Twee nieuwe schermen die van SamFlow een afgeronde, deelbare app maken: een eerste-start-wizard die je door de rechten loodst, en een voorkeuren-venster met echte schakelaars. Zelfde dark-pill-identiteit, nu met een gezicht. Hieronder gerenderd — nog geen code, puur om op te reageren.</p>
+  </div>
+
+  <div class="menubar" aria-hidden="true">
+    <span class="extra">Wi-Fi</span>
+    <span class="extra">100%</span>
+    <span class="extra active"><span class="bars" style="color:var(--rec)"><i></i><i></i><i></i><i></i></span> SamFlow</span>
+    <span class="extra">za 12 jul&nbsp;&nbsp;14:22</span>
+  </div>
+
+  <div class="stage">
+    <!-- ONBOARDING -->
+    <div class="col">
+      <div class="win">
+        <div class="titlebar">
+          <span class="lights"><span class="r"></span><span class="y"></span><span class="g"></span></span>
+          <p class="wintitle">Welkom</p>
+        </div>
+        <div class="winbody">
+          <div class="hero">
+            <div class="glyph"><span class="bars"><i></i><i></i><i></i><i></i></span></div>
+            <div>
+              <h2>Welkom bij SamFlow</h2>
+              <p>Houd <span class="keycap">fn</span> ingedrukt, praat, en laat los — de tekst verschijnt waar je typt. Nog drie rechten en je bent klaar.</p>
+            </div>
+          </div>
+
+          <div class="privacy">● 100% lokaal — niets gaat naar de cloud</div>
+
+          <div class="steps">
+            <div class="step">
+              <span class="dot ok">✓</span>
+              <div class="txt"><b>Microfoon</b><span>Om je stem te horen</span></div>
+            </div>
+            <div class="step">
+              <span class="dot ok">✓</span>
+              <div class="txt"><b>Invoercontrole</b><span>Om de Fn-toets te zien</span></div>
+            </div>
+            <div class="step">
+              <span class="dot wait">○</span>
+              <div class="txt"><b>Toegankelijkheid</b><span>Om de tekst te kunnen plakken</span></div>
+              <button class="btn">Openen…</button>
+            </div>
+            <div class="step">
+              <span class="dot wait">○</span>
+              <div class="txt"><b>Fn-toets vrijmaken</b><span>Toetsenbord → “Druk op fn” → Niets doen</span></div>
+              <button class="btn mini">Instellingen</button>
+            </div>
+          </div>
+
+          <div class="cta">
+            <span class="hint">Nog 2 stappen te gaan</span>
+            <button class="btn primary" disabled style="opacity:.55; cursor:default;">Begin met dicteren</button>
+          </div>
+        </div>
+      </div>
+      <p class="cap"><b>Eerste-start-wizard.</b> Vervangt de Terminal-instructies uit <code>install.sh</code>. Elke rij pollt de echte permissie-status live en kleurt groen zodra 'ie binnen is; de knop wordt actief als alles klaarstaat.</p>
+    </div>
+
+    <!-- PREFERENCES -->
+    <div class="col">
+      <div class="win">
+        <div class="titlebar">
+          <span class="lights"><span class="r"></span><span class="y"></span><span class="g"></span></span>
+          <p class="wintitle">Voorkeuren</p>
+        </div>
+        <div class="winbody">
+          <p class="glabel">Dicteren</p>
+          <div class="group">
+            <div class="row">
+              <div class="label"><b>Taal</b></div>
+              <div class="seg">
+                <button class="sel">Nederlands</button>
+                <button>English</button>
+                <button>Auto</button>
+              </div>
+            </div>
+            <div class="row">
+              <div class="label"><b>Model</b><span>Herstart de transcriptie-service</span></div>
+              <div class="drop">Turbo — snel <span class="chev">▾</span></div>
+            </div>
+            <div class="row">
+              <div class="label"><b>Sneltoets</b><span>Aanpasbaar in een latere versie</span></div>
+              <span class="keycap">fn</span>
+            </div>
+          </div>
+
+          <p class="glabel">Gedrag</p>
+          <div class="group">
+            <div class="row">
+              <div class="label"><b>Geluiden</b><span>Klik bij start, stop en klaar</span></div>
+              <span class="sw on"></span>
+            </div>
+            <div class="row">
+              <div class="label"><b>Media pauzeren tijdens dictaat</b></div>
+              <span class="sw on"></span>
+            </div>
+            <div class="row">
+              <div class="label"><b>Pill bij de cursor tonen</b></div>
+              <span class="sw on"></span>
+            </div>
+            <div class="row">
+              <div class="label"><b>Start bij inloggen</b></div>
+              <span class="sw on"></span>
+            </div>
+          </div>
+
+          <p class="glabel">Woordenlijst</p>
+          <div class="group">
+            <div class="row">
+              <div class="label"><b>Eigen termen</b><span>38 woorden · 2 fonetische correcties</span></div>
+              <button class="btn">Bewerken…</button>
+            </div>
+          </div>
+
+          <div class="winfoot">
+            <span>SamFlow 1.0 · lokaal &amp; open source</span>
+            <a href="#">Controleer op updates</a>
+          </div>
+        </div>
+      </div>
+      <p class="cap"><b>Voorkeuren-venster.</b> Elke schakelaar schrijft naar een klein settings-bestand dat per dictaat wordt herlezen — <span class="flag">nieuw: er is nu nog geen persistentie-laag</span>. Taal en gedrag werken meteen; het model wisselen herlaadt de whisper-service.</p>
+    </div>
+
+    <!-- PILL STATES (identity anchor) -->
+    <div class="pillstrip">
+      <p class="glabel">De pill die je al hebt — ongewijzigd, als anker voor de identiteit</p>
+      <div class="pills">
+        <div class="pillcard">
+          <div class="pill">
+            <span class="b" style="height:8px;background:var(--idle)"></span>
+            <span class="b" style="height:14px;background:var(--idle)"></span>
+            <span class="b" style="height:20px;background:var(--idle)"></span>
+            <span class="b" style="height:11px;background:var(--idle)"></span>
+          </div>
+          <span class="pilllabel">klaar</span>
+        </div>
+        <div class="pillcard">
+          <div class="pill">
+            <span class="b" style="height:10px;background:var(--rec)"></span>
+            <span class="b" style="height:22px;background:var(--rec)"></span>
+            <span class="b" style="height:16px;background:var(--rec)"></span>
+            <span class="b" style="height:24px;background:var(--rec)"></span>
+            <span class="b" style="height:13px;background:var(--rec)"></span>
+          </div>
+          <span class="pilllabel">opnemen</span>
+        </div>
+        <div class="pillcard">
+          <div class="pill">
+            <span class="pdot rec-dot" style="background:var(--think)"></span>
+            <span class="pdot rec-dot" style="background:var(--think); animation-delay:.2s"></span>
+            <span class="pdot rec-dot" style="background:var(--think); animation-delay:.4s"></span>
+          </div>
+          <span class="pilllabel">transcriberen</span>
+        </div>
+        <div class="pillcard">
+          <div class="pill"><span class="tick">✓</span></div>
+          <span class="pilllabel">geplakt</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="foot">Mockup ter beoordeling · geen functionele code · SamFlow blijft lokaal &amp; open source</p>
+</div>
+</body>
+</html>

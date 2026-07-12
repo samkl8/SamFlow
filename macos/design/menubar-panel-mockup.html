@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SamFlow — menubalk-paneel mockup</title>
+<style>
+  :root {
+    --stage-1:#EDECEF; --stage-2:#E3E1E6;
+    --panel:#FFFFFF; --panel-sunken:#F5F4F7; --ink:#1C1B20; --muted:#6C6B74; --faint:#9A99A2;
+    --hairline:rgba(20,18,30,0.10); --hairline-strong:rgba(20,18,30,0.15);
+    --accent:#E5463C; --rec:#E5463C; --think:#2F72E0; --done:#1B9E48; --idle:#9A9AA0;
+    --shadow:rgba(30,20,25,0.26); --chip:#EEEDF1;
+    --sys:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  :root[data-theme="dark"], :root:not([data-theme="light"]) {}
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --stage-1:#121214; --stage-2:#1A1A1D;
+      --panel:#2A2A30; --panel-sunken:#232329; --ink:#F1F1F4; --muted:#9C9BA4; --faint:#77767E;
+      --hairline:rgba(255,255,255,0.09); --hairline-strong:rgba(255,255,255,0.15);
+      --accent:#FF5A50; --rec:#FF5A50; --think:#73A6FF; --done:#4CD972; --idle:#8A8A90;
+      --shadow:rgba(0,0,0,0.55); --chip:#34333A;
+    }
+  }
+  :root[data-theme="dark"] {
+    --stage-1:#121214; --stage-2:#1A1A1D;
+    --panel:#2A2A30; --panel-sunken:#232329; --ink:#F1F1F4; --muted:#9C9BA4; --faint:#77767E;
+    --hairline:rgba(255,255,255,0.09); --hairline-strong:rgba(255,255,255,0.15);
+    --accent:#FF5A50; --rec:#FF5A50; --think:#73A6FF; --done:#4CD972; --idle:#8A8A90;
+    --shadow:rgba(0,0,0,0.55); --chip:#34333A;
+  }
+  :root[data-theme="light"] {
+    --stage-1:#EDECEF; --stage-2:#E3E1E6;
+    --panel:#FFFFFF; --panel-sunken:#F5F4F7; --ink:#1C1B20; --muted:#6C6B74; --faint:#9A99A2;
+    --hairline:rgba(20,18,30,0.10); --hairline-strong:rgba(20,18,30,0.15);
+    --accent:#E5463C; --rec:#E5463C; --think:#2F72E0; --done:#1B9E48; --idle:#9A9AA0;
+    --shadow:rgba(30,20,25,0.26); --chip:#EEEDF1;
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; font-family:var(--sys); color:var(--ink);
+    background:radial-gradient(120% 90% at 50% -10%, var(--stage-2), var(--stage-1) 65%);
+    min-height:100vh; -webkit-font-smoothing:antialiased;
+  }
+  .wrap { max-width:900px; margin:0 auto; padding:44px 24px 72px; }
+  .lede { max-width:600px; margin:0 auto 8px; text-align:center; }
+  .eyebrow { font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); font-weight:600; margin:0 0 10px; }
+  h1 { font-size:27px; line-height:1.15; margin:0 0 12px; letter-spacing:-.01em; text-wrap:balance; }
+  .lede p { font-size:14.5px; line-height:1.55; color:var(--muted); margin:0; }
+
+  .compare { display:grid; grid-template-columns:1fr 1fr; gap:40px; align-items:start; margin-top:40px; }
+  @media (max-width:720px){ .compare { grid-template-columns:1fr; gap:52px; } }
+  .col { display:flex; flex-direction:column; align-items:center; gap:16px; }
+  .tag { font-size:11.5px; letter-spacing:.08em; text-transform:uppercase; font-weight:700; padding:4px 12px; border-radius:999px; }
+  .tag.now { color:var(--muted); background:var(--chip); }
+  .tag.new { color:#fff; background:var(--accent); }
+  .cap { font-size:12.5px; line-height:1.5; color:var(--muted); text-align:center; max-width:320px; }
+
+  /* the SamFlow bars mark */
+  .bars { display:inline-flex; align-items:flex-end; gap:2px; height:15px; }
+  .bars i { width:2.8px; border-radius:2px; background:currentColor; display:block; }
+  .bars i:nth-child(1){ height:42%; } .bars i:nth-child(2){ height:72%; }
+  .bars i:nth-child(3){ height:100%; } .bars i:nth-child(4){ height:60%; }
+
+  /* menubar context strip */
+  .barstrip { width:260px; height:26px; border-radius:8px 8px 0 0; background:var(--panel);
+    display:flex; align-items:center; justify-content:flex-end; gap:12px; padding:0 12px;
+    font-size:12px; color:var(--muted); box-shadow:0 -1px 0 var(--hairline) inset; opacity:.9; }
+  .barstrip .live { color:var(--rec); }
+
+  /* ---- NOW: stock system menu ---- */
+  .stockmenu { width:264px; background:color-mix(in srgb, var(--panel) 92%, transparent);
+    backdrop-filter:blur(20px); border-radius:8px; padding:5px; font-size:13px;
+    box-shadow:0 0 0 0.5px var(--hairline-strong), 0 24px 50px -24px var(--shadow); }
+  .stockmenu .mi { padding:5px 10px; border-radius:5px; color:var(--ink); }
+  .stockmenu .mi.dis { color:var(--faint); }
+  .stockmenu .mi.key { display:flex; justify-content:space-between; }
+  .stockmenu .sep { height:1px; background:var(--hairline); margin:5px 8px; }
+
+  /* ---- NEW: custom panel ---- */
+  .panel { width:300px; background:var(--panel); border-radius:14px; overflow:hidden;
+    box-shadow:0 0 0 0.5px var(--hairline-strong), 0 30px 60px -28px var(--shadow), 0 10px 24px -20px var(--shadow); }
+  .p-head { display:flex; align-items:center; gap:11px; padding:15px 16px 13px;
+    background:linear-gradient(180deg, color-mix(in srgb, var(--accent) 8%, var(--panel)), var(--panel)); }
+  .p-glyph { width:34px; height:34px; border-radius:9px; flex:0 0 auto; display:flex; align-items:center; justify-content:center;
+    background:linear-gradient(160deg,#2a2a2e,#131315); color:var(--rec);
+    box-shadow:inset 0 0 0 0.5px rgba(255,255,255,.08); }
+  .p-glyph .bars { height:17px; } .p-glyph .bars i{ width:3px; }
+  .p-title { flex:1 1 auto; }
+  .p-title b { font-size:14px; font-weight:700; display:block; letter-spacing:-.01em; }
+  .p-title span { font-size:11.5px; color:var(--muted); }
+  .p-status { display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:600; color:var(--done);
+    background:color-mix(in srgb, var(--done) 13%, transparent); padding:4px 9px; border-radius:999px; }
+  .p-status .d { width:7px; height:7px; border-radius:50%; background:var(--done); }
+
+  .p-sec { padding:11px 16px; border-top:0.5px solid var(--hairline); }
+  .p-lab { font-size:10.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--faint); font-weight:700; margin:0 0 7px; }
+  .p-last { background:var(--panel-sunken); border-radius:9px; padding:10px 12px; display:flex; align-items:flex-start; gap:10px; }
+  .p-last .q { flex:1 1 auto; font-size:12.5px; line-height:1.4; color:var(--ink); }
+  .p-copy { font-family:inherit; font-size:11.5px; font-weight:600; color:var(--accent); background:transparent;
+    border:none; cursor:pointer; padding:3px 6px; border-radius:6px; white-space:nowrap; }
+
+  .p-row { display:flex; align-items:center; gap:12px; padding:8px 0; }
+  .p-row .rl { flex:1 1 auto; font-size:13px; }
+  .p-row + .p-row { border-top:0.5px solid var(--hairline); }
+  .sw { width:36px; height:22px; border-radius:999px; background:var(--hairline-strong); position:relative; flex:0 0 auto; }
+  .sw::after { content:""; position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.3); }
+  .sw.on { background:var(--accent); } .sw.on::after { left:16px; }
+
+  .p-act { display:flex; align-items:center; gap:11px; padding:9px 16px; font-size:13px; color:var(--ink); cursor:default; }
+  .p-act:hover { background:var(--panel-sunken); }
+  .p-act .ic { width:20px; display:inline-flex; align-items:center; justify-content:center; color:var(--muted); }
+  .p-act .ic svg { width:17px; height:17px; display:block; }
+  .p-act .sk { margin-left:auto; color:var(--faint); font-size:12px; font-family:var(--mono); }
+  .p-acts { border-top:0.5px solid var(--hairline); padding:5px 0; }
+
+  .p-foot { display:flex; align-items:center; justify-content:space-between; padding:10px 16px;
+    border-top:0.5px solid var(--hairline); font-size:11.5px; color:var(--faint); }
+  .p-quit { font-family:inherit; font-size:12px; font-weight:600; color:var(--ink); background:var(--chip);
+    border:none; border-radius:7px; padding:5px 12px; cursor:pointer; }
+
+  .foot { text-align:center; margin-top:48px; font-size:12px; color:var(--faint); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="lede">
+    <p class="eyebrow">SamFlow · menubalk-paneel</p>
+    <h1>De dropdown zelf, niet meer de kale systeemlijst</h1>
+    <p>De huidige klik op het menubalk-icoon opent een standaard macOS-tekstmenu. We vervangen dat door een eigen paneel (NSPopover met een custom view) in SamFlow's stijl: status, snelle toggles en je laatste dictaat bij de hand — niet alleen navigatie.</p>
+  </div>
+
+  <div class="compare">
+    <!-- NOW -->
+    <div class="col">
+      <span class="tag now">Nu</span>
+      <div style="display:flex; flex-direction:column; align-items:center;">
+        <div class="barstrip"><span class="bars live"><i></i><i></i><i></i><i></i></span></div>
+        <div class="stockmenu">
+          <div class="mi dis">SamFlow — klaar — houd Fn ingedrukt om te dicteren</div>
+          <div class="sep"></div>
+          <div class="mi">Kopieer laatste dictaat</div>
+          <div class="sep"></div>
+          <div class="mi key">Voorkeuren… <span>⌘,</span></div>
+          <div class="mi">Woordenlijst bewerken…</div>
+          <div class="mi">Vaak gehoorde woorden reviewen…</div>
+          <div class="sep"></div>
+          <div class="mi">Setup &amp; permissies…</div>
+          <div class="sep"></div>
+          <div class="mi">Stop SamFlow</div>
+        </div>
+      </div>
+      <p class="cap">Een systeem-tekstmenu. Functioneel, maar het is de standaard die elke app heeft — geen gezicht.</p>
+    </div>
+
+    <!-- NEW -->
+    <div class="col">
+      <span class="tag new">Voorstel</span>
+      <div style="display:flex; flex-direction:column; align-items:center;">
+        <div class="barstrip"><span class="bars live"><i></i><i></i><i></i><i></i></span></div>
+        <div class="panel">
+          <div class="p-head">
+            <div class="p-glyph"><span class="bars"><i></i><i></i><i></i><i></i></span></div>
+            <div class="p-title"><b>SamFlow</b><span>Houd fn ingedrukt om te dicteren</span></div>
+            <span class="p-status"><span class="d"></span>klaar</span>
+          </div>
+
+          <div class="p-sec">
+            <p class="p-lab">Laatste dictaat</p>
+            <div class="p-last">
+              <span class="q">"Ik push de repo naar staging."</span>
+              <button class="p-copy">Kopiëren</button>
+            </div>
+          </div>
+
+          <div class="p-sec">
+            <div class="p-row"><span class="rl">Geluiden</span><span class="sw on"></span></div>
+            <div class="p-row"><span class="rl">Media pauzeren</span><span class="sw on"></span></div>
+            <div class="p-row"><span class="rl">Pill tonen</span><span class="sw on"></span></div>
+          </div>
+
+          <div class="p-acts">
+            <div class="p-act">
+              <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+                <line x1="4" y1="7" x2="20" y2="7"/><circle cx="15" cy="7" r="2.3" fill="var(--panel)"/>
+                <line x1="4" y1="12" x2="20" y2="12"/><circle cx="9" cy="12" r="2.3" fill="var(--panel)"/>
+                <line x1="4" y1="17" x2="20" y2="17"/><circle cx="16" cy="17" r="2.3" fill="var(--panel)"/>
+              </svg></span> Voorkeuren… <span class="sk">⌘,</span></div>
+            <div class="p-act">
+              <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round">
+                <path d="M12 6.2C10.3 5 7.9 4.4 5 4.4V18c2.9 0 5.3.6 7 1.8 1.7-1.2 4.1-1.8 7-1.8V4.4c-2.9 0-5.3.6-7 1.8z"/>
+                <line x1="12" y1="6.2" x2="12" y2="19.8"/>
+              </svg></span> Woordenlijst bewerken…</div>
+            <div class="p-act">
+              <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round">
+                <path d="M12 3.2l1.9 5.4 5.4 1.9-5.4 1.9L12 17.8l-1.9-5.4L4.7 10.5l5.4-1.9z"/>
+              </svg></span> Vaak gehoorde woorden reviewen…</div>
+            <div class="p-act">
+              <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round">
+                <path d="M12 3l7 2.5v5.1c0 4.2-2.9 7.5-7 8.6-4.1-1.1-7-4.4-7-8.6V5.5z"/>
+                <path d="M8.8 12.2l2.2 2.2 4.2-4.4"/>
+              </svg></span> Setup &amp; permissies…</div>
+          </div>
+
+          <div class="p-foot">
+            <span>SamFlow 1.0 · lokaal</span>
+            <button class="p-quit">Stop</button>
+          </div>
+        </div>
+      </div>
+      <p class="cap">Eigen paneel in de dark-pill-identiteit: kop met status, snelle toggles, je laatste dictaat met één klik kopieerbaar, en de acties eronder.</p>
+    </div>
+  </div>
+
+  <p class="foot">Mockup ter beoordeling · lokaal gerenderd, geen artifact · thema volgt je systeem (licht/donker)</p>
+</div>
+</body>
+</html>
