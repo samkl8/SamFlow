@@ -52,6 +52,7 @@ import cleanup
 import hud as hud_module
 import lexicon
 import media as media_module
+import settings
 
 # ---------- config ----------
 SERVER_URL = "http://127.0.0.1:8181/inference"
@@ -92,7 +93,9 @@ def hud_state(state: str):
 
 
 def cue(kind: str):
-    if SOUND_CUES:
+    # SOUND_CUES is de harde uit-schakelaar (constante); daarbinnen bepaalt de
+    # live voorkeur of 'ie klinkt, zodat de toggle in het venster meteen werkt.
+    if SOUND_CUES and settings.get("sound_cues"):
         subprocess.Popen(["afplay", SOUNDS[kind]],
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -120,7 +123,7 @@ def transcribe(audio: bytes) -> str:
     r = requests.post(
         SERVER_URL,
         files={"file": ("speech.wav", audio, "audio/wav")},
-        data={"response_format": "json", "language": LANGUAGE,
+        data={"response_format": "json", "language": settings.get("language"),
               "temperature": "0", "prompt": cleanup.whisper_prompt()},
         timeout=60,
     )
@@ -300,7 +303,7 @@ def run_daemon():
         if fn_held and not rec.recording:
             # Eerst pauzeren, dan pas opnemen: de pre-roll van vóór de Fn-druk zou
             # anders muziek bevatten. Detectie kost ~20 ms, dat merk je niet.
-            paused = guard.pause() if guard else []
+            paused = guard.pause() if (guard and settings.get("pause_media")) else []
             if paused:
                 print(f"  ⏸ {', '.join(name for _, name in paused)}")
             cue("start")
@@ -453,7 +456,14 @@ def main():
     ap.add_argument("--once", action="store_true", help="één dictaat opnemen en printen")
     ap.add_argument("--review", action="store_true",
                     help="vaak-gehoorde onbekende woorden afhandelen (de leer-loop)")
+    ap.add_argument("--prefs", action="store_true", help="alleen het voorkeuren-venster tonen")
+    ap.add_argument("--welcome", action="store_true", help="alleen de eerste-start-wizard tonen")
     args = ap.parse_args()
+
+    if args.prefs or args.welcome:
+        import prefs
+        prefs._run_standalone("welcome" if args.welcome else "prefs")
+        return
 
     if args.check:
         sys.exit(check())

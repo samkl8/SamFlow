@@ -34,7 +34,7 @@ import objc
 from AppKit import (
     NSApplication, NSApplicationActivationPolicyAccessory,
     NSApplicationDidChangeScreenParametersNotification, NSBackingStoreBuffered,
-    NSBezierPath, NSColor, NSImage, NSMakeRect, NSMenu, NSMenuItem, NSPanel,
+    NSBezierPath, NSColor, NSEventMaskLeftMouseDown, NSImage, NSMakeRect, NSPanel,
     NSPasteboard, NSPasteboardTypeString, NSScreen, NSStatusBar, NSTimer, NSView,
     NSWindowCollectionBehaviorCanJoinAllSpaces, NSWindowCollectionBehaviorFullScreenAuxiliary,
     NSWindowCollectionBehaviorStationary, NSWindowStyleMaskBorderless,
@@ -44,6 +44,9 @@ from Foundation import NSNotificationCenter, NSObject
 
 import focus
 import lexicon
+import panel
+import prefs
+import settings
 
 # ---------- config ----------
 PILL_W, PILL_H = 168.0, 46.0
@@ -56,11 +59,6 @@ BAR_W, BAR_GAP = 5.0, 7.0
 BAR_MIN, BAR_MAX = 4.0, 24.0
 DONE_FLASH_SEC = 0.7
 WINDOW_LEVEL = 25          # NSStatusWindowLevel: above normal windows, below alerts
-MENU_ICONS = {"idle": "◌", "recording": "◉", "thinking": "◍", "done": "◉"}
-MENU_LABELS = {"idle": "klaar — houd Fn ingedrukt om te dicteren",
-               "recording": "aan het luisteren…",
-               "thinking": "transcriberen…",
-               "done": "geplakt ✓"}
 # ----------------------------
 
 _ACCENT = {
@@ -220,8 +218,11 @@ class _Ticker(NSObject):
     def screensChanged_(self, _note):
         self.hud._rebuild_panel()
 
-    # --- menu-acties. Draaien op de main thread (het zijn menu-clicks), maar het
-    #     echte werk gaat naar losse processen zodat het menu nooit blokkeert.
+    def togglePopover_(self, _sender):
+        self.hud._panel.toggle(self.hud.status.button())
+
+    # --- paneel-acties. Draaien op de main thread (het zijn klikken), maar het
+    #     echte werk gaat naar losse processen zodat het paneel nooit blokkeert.
     def editLexicon_(self, _sender):
         subprocess.Popen(["open", "-t", lexicon.LEXICON_FILE])
 
@@ -234,6 +235,12 @@ class _Ticker(NSObject):
             "-e", 'tell application "Terminal" to activate',
             "-e", f'tell application "Terminal" to do script {json.dumps(cmd)}',
         ])
+
+    def openPreferences_(self, _sender):
+        prefs.open_preferences()
+
+    def openWelcome_(self, _sender):
+        prefs.open_welcome()
 
     def openPermissions_(self, _sender):
         subprocess.Popen([
@@ -317,7 +324,18 @@ class Hud:
             self._ticker, "screensChanged:",
             NSApplicationDidChangeScreenParametersNotification, None)
 
-        self._build_menu()
+        # Klik op het icoon opent ons eigen paneel (panel.py), niet de kale
+        # systeem-NSMenu. De knop stuurt de klik naar _Ticker.togglePopover_.
+        self._panel = panel.MenuPanel.alloc().initWithHud_ticker_(self, self._ticker)
+        btn = self.status.button()
+        btn.setTarget_(self._ticker)
+        btn.setAction_("togglePopover:")
+        # Op mouse-DOWN vuren, niet -up: een transient popover sluit al bij de
+        # muisklik-neer buiten z'n content. Vuurde de toggle pas op mouse-up, dan
+        # zag 'ie de popover als "dicht" en heropende 'm meteen — klikken-om-te-
+        # sluiten werkte dan nooit. Op mouse-down klopt isShown() nog wél.
+        btn.sendActionOn_(NSEventMaskLeftMouseDown)
+
         NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
             1 / 30.0, self._ticker, "tick:", None, True)
 
@@ -382,56 +400,21 @@ class Hud:
         origin, _ = placement()
         self.panel.setFrameOrigin_(origin)
 
-    def _build_menu(self):
-        """Maakt de ◌ klikbaar: een statusregel en een manier om te stoppen."""
-        menu = NSMenu.alloc().init()
-
-        self._menu_status = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-            "SamFlow — klaar", None, "")
-        self._menu_status.setEnabled_(False)
-        menu.addItem_(self._menu_status)
-
-        menu.addItem_(NSMenuItem.separatorItem())
-
-        def _item(title, selector):
-            it = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(title, selector, "")
-            it.setTarget_(self._ticker)
-            menu.addItem_(it)
-
-        _item("Kopieer laatste dictaat", "copyLastText:")
-
-        menu.addItem_(NSMenuItem.separatorItem())
-
-        _item("Woordenlijst bewerken…", "editLexicon:")
-        _item("Vaak gehoorde woorden reviewen…", "reviewWords:")
-        _item("Permissies…", "openPermissions:")
-
-        menu.addItem_(NSMenuItem.separatorItem())
-
-        quit_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-            "Stop SamFlow", "quit:", "")
-        quit_item.setTarget_(self._ticker)
-        menu.addItem_(quit_item)
-
-        # Vasthouden op self: setMenu_ hoort het menu te retainen, maar zonder een
-        # eigen Python-referentie ruimt de garbage collector het object op en hangt
-        # er een dood menu aan het icoon — dan doet klikken niets. (Getest: mét deze
-        # regel verschijnt het menu, zonder niet.)
-        self._menu = menu
-        self.status.setMenu_(menu)
-
     def _on_tick(self):
         with self._lock:
             state = self._state
             if state == "done" and time.monotonic() > self._done_until:
                 state = self._state = "idle"
 
+        # De menubalk toont de status altijd; de zwevende pill is een aparte
+        # voorkeur (show_pill), zodat je 'm uit kunt zetten en tóch het icoon houdt.
+        show_pill = settings.get("show_pill")
+
         if state != self._shown:
             was = self._shown
             self._shown = state
             self.status.button().setImage_(self._status_images[state])
-            self._menu_status.setTitle_(f"SamFlow — {MENU_LABELS[state]}")
-            if state == "idle":
+            if state == "idle" or not show_pill:
                 self.panel.orderOut_(None)
             else:
                 if was in (None, "idle"):
@@ -440,7 +423,7 @@ class Hud:
                 # we are about to paste into.
                 self.panel.orderFrontRegardless()
 
-        if state != "idle":
+        if state != "idle" and show_pill:
             self.panel.contentView().setNeedsDisplay_(True)
 
     def run(self):

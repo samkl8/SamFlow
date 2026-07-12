@@ -10,3 +10,6 @@ launchd/
 lexicon.txt
 mappings.txt
 candidates.json
+
+# Gebruikersvoorkeuren uit het voorkeuren-venster. Machine-lokaal.
+settings.json
