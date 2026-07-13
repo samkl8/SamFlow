@@ -26,6 +26,7 @@ DEFAULTS = {
     "pause_media": True,  # Spotify/video pauzeren tijdens een dictaat
     "show_pill": True,    # de zwevende pill bij de cursor (menubalk blijft altijd)
     "model": "turbo",     # "turbo" | "large-v3" -- nog niet live, zie voorkeuren
+    "auto_update": True,  # op de achtergrond bijwerken vanaf GitHub (fast-forward)
 }
 
 _cache = None  # (mtime, dict) -- zelfde patroon als lexicon._read

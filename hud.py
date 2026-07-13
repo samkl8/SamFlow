@@ -47,6 +47,11 @@ import lexicon
 import panel
 import prefs
 import settings
+import updater
+
+# Eerste update-check kort na opstart (netwerk moet er zijn), daarna elke 6 uur.
+UPDATE_FIRST_DELAY_SEC = 8
+UPDATE_INTERVAL_SEC = 6 * 3600
 
 # ---------- config ----------
 PILL_W, PILL_H = 168.0, 46.0
@@ -221,6 +226,41 @@ class _Ticker(NSObject):
     def togglePopover_(self, _sender):
         self.hud._panel.toggle(self.hud.status.button())
 
+    def restartApp_(self, _sender):
+        # Nieuwe code is al binnengehaald; een herstart laadt 'm. TCC-veilig via
+        # de bundle (updater.relaunch), dan onszelf afsluiten.
+        updater.relaunch()
+        self.hud.app.terminate_(None)
+
+    def applyUpdate_(self, _sender):
+        # Handmatig "nu bijwerken" (auto stond uit of kon niet vanzelf). Kort
+        # blokkeren mag: het is een bewuste klik. Lukt de fast-forward, herstart.
+        info = updater.check()
+        ok, _msg = updater.apply(info) if info else (False, "")
+        if ok:
+            updater.relaunch()
+            self.hud.app.terminate_(None)
+
+    def checkForUpdates_(self, _sender):
+        # Op een thread: git fetch is netwerk. Werkt de Hud-state bij; het paneel
+        # toont de uitkomst bij de volgende keer openen.
+        threading.Thread(target=self._check_updates_bg, daemon=True).start()
+
+    @objc.python_method
+    def _check_updates_bg(self):
+        info = updater.check()
+        if not info or info["behind"] == 0:
+            self.hud.set_update({"applied": False, "available": False,
+                                 "subject": "", "can_apply": False})
+            return
+        if settings.get("auto_update") and info["can_apply"]:
+            ok, _ = updater.apply(info)
+            self.hud.set_update({"applied": ok, "available": not ok,
+                                 "subject": info["subject"], "can_apply": info["can_apply"]})
+        else:
+            self.hud.set_update({"applied": False, "available": True,
+                                 "subject": info["subject"], "can_apply": info["can_apply"]})
+
     # --- paneel-acties. Draaien op de main thread (het zijn klikken), maar het
     #     echte werk gaat naar losse processen zodat het paneel nooit blokkeert.
     def editLexicon_(self, _sender):
@@ -274,6 +314,8 @@ class Hud:
         self._shown = None
         self._done_until = 0.0
         self._last_text = None
+        self._update = {"applied": False, "available": False,
+                        "subject": "", "can_apply": False}
         self.panel = None
 
     # --- called from any thread -------------------------------------------
@@ -298,6 +340,36 @@ class Hud:
     def last_text(self):
         with self._lock:
             return self._last_text
+
+    def set_update(self, state: dict):
+        with self._lock:
+            self._update = dict(state)
+
+    def update_state(self):
+        with self._lock:
+            return dict(self._update)
+
+    def _update_loop(self):
+        """Achtergrond: check bij GitHub en (als auto_update aanstaat en het een
+        schone fast-forward is) trek de update binnen. Zet alleen Hud-state; de
+        nieuwe code gaat pas leven na een herstart, die het paneel aanbiedt."""
+        time.sleep(UPDATE_FIRST_DELAY_SEC)
+        while True:
+            try:
+                info = updater.check()
+                if info and info["behind"] > 0:
+                    if settings.get("auto_update") and info["can_apply"]:
+                        ok, _ = updater.apply(info)
+                        self.set_update({"applied": ok, "available": not ok,
+                                         "subject": info["subject"],
+                                         "can_apply": info["can_apply"]})
+                    else:
+                        self.set_update({"applied": False, "available": True,
+                                         "subject": info["subject"],
+                                         "can_apply": info["can_apply"]})
+            except Exception:
+                pass
+            time.sleep(UPDATE_INTERVAL_SEC)
 
     def snapshot(self):
         with self._lock:
@@ -338,6 +410,10 @@ class Hud:
 
         NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
             1 / 30.0, self._ticker, "tick:", None, True)
+
+        # Auto-update draait op een eigen thread: git fetch is netwerk-I/O en mag
+        # de run loop (Fn-tap + pill) nooit blokkeren. Schrijft alleen Hud-state.
+        threading.Thread(target=self._update_loop, daemon=True).start()
 
     def _build_panel(self):
         """Maakt het pill-paneel aan tegen de HUIDIGE schermtopologie. Apart van

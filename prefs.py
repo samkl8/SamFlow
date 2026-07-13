@@ -220,7 +220,7 @@ class PreferencesWindow(NSObject):
         y += ROW_H + SEC_GAP
 
         y = _section(v, y, "Gedrag")
-        for i, key in enumerate(("sound_cues", "pause_media", "show_pill")):
+        for key in ("sound_cues", "pause_media", "show_pill", "auto_update"):
             self._switch(v, y, key)
             y += ROW_H
             _separator(v, y)
@@ -280,6 +280,7 @@ _ROW_TEXT = {
     "sound_cues": ("Geluiden", "Klik bij start, stop en klaar"),
     "pause_media": ("Media pauzeren tijdens dictaat", None),
     "show_pill": ("Pill bij de cursor tonen", None),
+    "auto_update": ("Automatisch bijwerken", "Haalt updates op de achtergrond op van GitHub"),
 }
 
 

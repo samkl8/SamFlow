@@ -4,16 +4,19 @@ systeem-NSMenu. Klik op het menubalk-icoon opent dit paneel.
 
 Waarom een popover en geen menu: een NSMenu is een systeem-tekstlijst die je
 nauwelijks kunt stylen. Een NSPopover host een gewone view, dus we hebben er de
-volledige controle over -- status, snelle toggles en het laatste dictaat, in
-SamFlow's eigen stijl. De iconen zijn SF Symbols (Apple's vector-set, template
-zodat ze de tekstkleur aannemen), geen emoji.
+volledige controle over -- status, snelle toggles, laatste dictaat, en (als 'ie
+klaarstaat) een update-knop, in SamFlow's eigen stijl. De iconen zijn SF Symbols
+(Apple's vector-set, template zodat ze de tekstkleur aannemen), geen emoji.
 
-Het paneel gebruikt de native popover-material, dus het schakelt vanzelf mee met
-licht/donker. Het wordt vlak vóór tonen ververst (popoverWillShow_); zolang het
-dicht is hoeven we niets bij te werken.
+Het paneel wordt bij élke opening opnieuw opgebouwd (_rebuild): zo weerspiegelt
+het altijd de actuele status, laatste dictaat, toggle-standen en update-stand
+zonder een aparte verver-route. Dat kost niets -- het opent maar af en toe.
 
-Alle AppKit-calls op de main thread: de popover opent door een klik op de
-statusbar-knop (main thread) en de 30 fps-timer raakt dit paneel niet aan.
+Bij openen activeren we de app even (activateIgnoringOtherApps_): anders rendert
+macOS de switches in de inactieve, grijze stijl i.p.v. groen. Veilig, want het
+paneel is een bewuste klik en de Fn-tap is globaal.
+
+Alle AppKit-calls op de main thread (de popover opent door een klik).
 """
 import objc
 from AppKit import (
@@ -28,6 +31,7 @@ from Foundation import NSObject
 from Quartz import CGColorCreateGenericRGB
 
 import settings
+import updater
 
 W = 300
 PAD = 16
@@ -46,6 +50,8 @@ _STATE_LABEL = {
     "thinking": "transcriberen…",
     "done": "geplakt ✓",
 }
+_ACCENT = (0.90, 0.27, 0.24)
+_GREEN = (0.20, 0.72, 0.35)
 
 
 def _rgb(t, a=1.0):
@@ -86,6 +92,11 @@ def _symbol(name, size=14):
     return img
 
 
+def _framed(view, frame):
+    view.setFrame_(frame)
+    return view
+
+
 class _GlyphView(NSView):
     """Het app-merkje: rode equalizer-balkjes op een donker afgerond vierkant.
     Statisch (de status leeft in de gekleurde stip ernaast), puur identiteit."""
@@ -117,10 +128,21 @@ class MenuPanel(NSObject):
             return None
         self._hud = hud
         self._ticker = ticker
-        self._switches = []   # (NSSwitch, settings-sleutel)
-        self._build()
+        self._switches = []
+        try:
+            self._version = updater.short_version()
+        except Exception:
+            self._version = "?"
+        vc = NSViewController.alloc().init()
+        pop = NSPopover.alloc().init()
+        pop.setContentViewController_(vc)
+        pop.setBehavior_(NSPopoverBehaviorTransient)
+        self._vc = vc
+        self.popover = pop
+        self._rebuild()
         return self
 
+    # --- bouwstenen ---
     @objc.python_method
     def _sunken(self, frame):
         v = _PanelFlipped.alloc().initWithFrame_(frame)
@@ -128,6 +150,12 @@ class MenuPanel(NSObject):
         v.layer().setCornerRadius_(9)
         v.layer().setBackgroundColor_(_cg((0.5, 0.5, 0.5), 0.10))
         return v
+
+    @objc.python_method
+    def _separator(self, root, y):
+        box = NSBox.alloc().initWithFrame_(NSMakeRect(PAD, y, W - 2 * PAD, 1))
+        box.setBoxType_(NSBoxSeparator)
+        root.addSubview_(box)
 
     @objc.python_method
     def _switch_row(self, root, y, label, key):
@@ -142,7 +170,7 @@ class MenuPanel(NSObject):
         root.addSubview_(sw)
 
     @objc.python_method
-    def _action_row(self, root, y, title, symbol, selector, key=""):
+    def _action_row(self, root, y, title, symbol, selector):
         img = _symbol(symbol)
         btn = NSButton.buttonWithTitle_target_action_("  " + title, self._ticker, selector)
         if img is not None:
@@ -151,90 +179,126 @@ class MenuPanel(NSObject):
         btn.setBordered_(False)
         btn.setAlignment_(NSTextAlignmentLeft)
         btn.setFont_(NSFont.systemFontOfSize_(13))
-        if key:
-            btn.setKeyEquivalent_(key)
         btn.setFrame_(NSMakeRect(PAD - 4, y, W - 2 * (PAD - 4), 28))
         root.addSubview_(btn)
 
     @objc.python_method
-    def _separator(self, root, y):
-        box = NSBox.alloc().initWithFrame_(NSMakeRect(PAD, y, W - 2 * PAD, 1))
-        box.setBoxType_(NSBoxSeparator)
-        root.addSubview_(box)
+    def _update_button(self, root, y, title, selector, rgb):
+        btn = NSButton.buttonWithTitle_target_action_(title, self._ticker, selector)
+        btn.setBezelStyle_(1)
+        btn.setFont_(NSFont.systemFontOfSize_weight_(12.5, 0.3))
+        try:
+            btn.setContentTintColor_(_rgb(rgb))
+        except Exception:
+            pass
+        btn.setFrame_(NSMakeRect(PAD, y, W - 2 * PAD, 30))
+        root.addSubview_(btn)
 
+    # --- opbouw + tonen ---
     @objc.python_method
-    def _build(self):
-        root = _PanelFlipped.alloc().initWithFrame_(NSMakeRect(0, 0, W, 600))
+    def _make_view(self):
+        self._switches = []
+        state, _ = self._hud.snapshot()
+        last = self._hud.last_text()
+        u = self._hud.update_state()
+        root = _PanelFlipped.alloc().initWithFrame_(NSMakeRect(0, 0, W, 640))
         y = 14
 
-        # --- kop: glyph + naam + status ---
-        glyph = _GlyphView.alloc().initWithFrame_(NSMakeRect(PAD, y, 34, 34))
-        root.addSubview_(glyph)
+        # kop: glyph + naam + status
+        root.addSubview_(_GlyphView.alloc().initWithFrame_(NSMakeRect(PAD, y, 34, 34)))
         root.addSubview_(_framed(_label("SamFlow", 14, "bold"),
                                  NSMakeRect(PAD + 44, y, W - PAD - 44, 18)))
-        self._status_dot = _PanelFlipped.alloc().initWithFrame_(
-            NSMakeRect(PAD + 44, y + 22, 8, 8))
-        self._status_dot.setWantsLayer_(True)
-        self._status_dot.layer().setCornerRadius_(4)
-        root.addSubview_(self._status_dot)
-        self._status_label = _label("", 11.5, color=NSColor.secondaryLabelColor())
-        self._status_label.setFrame_(NSMakeRect(PAD + 58, y + 20, W - PAD - 58, 15))
-        root.addSubview_(self._status_label)
+        dot = _PanelFlipped.alloc().initWithFrame_(NSMakeRect(PAD + 44, y + 22, 8, 8))
+        dot.setWantsLayer_(True)
+        dot.layer().setCornerRadius_(4)
+        dot.layer().setBackgroundColor_(_cg(_STATE_RGB[state]))
+        root.addSubview_(dot)
+        root.addSubview_(_framed(
+            _label(_STATE_LABEL[state], 11.5, color=NSColor.secondaryLabelColor()),
+            NSMakeRect(PAD + 58, y + 20, W - PAD - 58, 15)))
         y += 34 + 12
         self._separator(root, y)
         y += 11
 
-        # --- laatste dictaat ---
+        # update-regel (alleen als er iets te melden is)
+        if u.get("applied"):
+            self._update_button(root, y, "✓  Update binnengehaald — nu herstarten",
+                                "restartApp:", _GREEN)
+            y += 38
+        elif u.get("available") and u.get("can_apply"):
+            self._update_button(root, y, "Update beschikbaar — nu bijwerken",
+                                "applyUpdate:", _ACCENT)
+            y += 38
+        elif u.get("available"):
+            root.addSubview_(_framed(
+                _label("Update beschikbaar op GitHub (git pull)", 12,
+                       color=NSColor.secondaryLabelColor()),
+                NSMakeRect(PAD, y, W - 2 * PAD, 18)))
+            y += 26
+
+        # laatste dictaat
         root.addSubview_(_framed(
             _label("LAATSTE DICTAAT", 10.5, color=NSColor.tertiaryLabelColor()),
             NSMakeRect(PAD, y, W - 2 * PAD, 14)))
         y += 20
         card = self._sunken(NSMakeRect(PAD, y, W - 2 * PAD, 56))
-        self._last_label = NSTextField.wrappingLabelWithString_("")
-        self._last_label.setFont_(NSFont.systemFontOfSize_(12.5))
-        self._last_label.setFrame_(NSMakeRect(11, 8, W - 2 * PAD - 22 - 62, 40))
-        card.addSubview_(self._last_label)
-        self._copy_btn = NSButton.buttonWithTitle_target_action_(
-            "Kopiëren", self._ticker, "copyLastText:")
-        self._copy_btn.setBordered_(False)
-        self._copy_btn.setFont_(NSFont.systemFontOfSize_(11.5))
-        self._copy_btn.setContentTintColor_(NSColor.systemRedColor())
-        self._copy_btn.setFrame_(NSMakeRect(W - 2 * PAD - 66, 14, 60, 22))
-        card.addSubview_(self._copy_btn)
+        lbl = NSTextField.wrappingLabelWithString_("")
+        lbl.setFont_(NSFont.systemFontOfSize_(12.5))
+        lbl.setFrame_(NSMakeRect(11, 8, W - 2 * PAD - 22 - 62, 40))
+        if last:
+            shown = last if len(last) <= 140 else last[:139] + "…"
+            lbl.setStringValue_(f"“{shown}”")
+            lbl.setTextColor_(NSColor.labelColor())
+        else:
+            lbl.setStringValue_("Nog niets gedicteerd")
+            lbl.setTextColor_(NSColor.tertiaryLabelColor())
+        card.addSubview_(lbl)
+        copy = NSButton.buttonWithTitle_target_action_("Kopiëren", self._ticker, "copyLastText:")
+        copy.setBordered_(False)
+        copy.setFont_(NSFont.systemFontOfSize_(11.5))
+        copy.setContentTintColor_(NSColor.systemRedColor())
+        copy.setEnabled_(bool(last))
+        copy.setFrame_(NSMakeRect(W - 2 * PAD - 66, 14, 60, 22))
+        card.addSubview_(copy)
         root.addSubview_(card)
         y += 56 + 12
         self._separator(root, y)
         y += 8
 
-        # --- snelle toggles ---
+        # snelle toggles
         self._switch_row(root, y, "Geluiden", "sound_cues")
         y += 34
         self._switch_row(root, y, "Media pauzeren", "pause_media")
         y += 34
         self._switch_row(root, y, "Pill tonen", "show_pill")
+        y += 34
+        self._switch_row(root, y, "Automatisch bijwerken", "auto_update")
         y += 34 + 6
         self._separator(root, y)
         y += 8
 
-        # --- acties ---
-        self._action_row(root, y, "Voorkeuren…", "slider.horizontal.3", "openPreferences:", ",")
+        # acties
+        self._action_row(root, y, "Voorkeuren…", "slider.horizontal.3", "openPreferences:")
         y += 30
         self._action_row(root, y, "Woordenlijst bewerken…", "book", "editLexicon:")
         y += 30
         self._action_row(root, y, "Vaak gehoorde woorden reviewen…", "sparkles", "reviewWords:")
         y += 30
         self._action_row(root, y, "Setup & permissies…", "checkmark.shield", "openWelcome:")
+        y += 30
+        self._action_row(root, y, "Controleer op updates", "arrow.triangle.2.circlepath",
+                         "checkForUpdates:")
         y += 30 + 6
         self._separator(root, y)
         y += 8
 
-        # --- voet ---
+        # voet
         root.addSubview_(_framed(
-            _label("SamFlow · lokaal", 11.5, color=NSColor.tertiaryLabelColor()),
-            NSMakeRect(PAD, y + 5, 160, 15)))
+            _label(f"SamFlow · {self._version}", 11.5, color=NSColor.tertiaryLabelColor()),
+            NSMakeRect(PAD, y + 5, 170, 15)))
         stop = NSButton.buttonWithTitle_target_action_("Stop", self._ticker, "quit:")
         stop.setFont_(NSFont.systemFontOfSize_(12))
-        stop.setBezelStyle_(1)  # afgerond
+        stop.setBezelStyle_(1)
         stop.sizeToFit()
         sw_ = max(stop.frame().size.width, 60)
         stop.setFrame_(NSMakeRect(W - PAD - sw_, y, sw_, 26))
@@ -242,62 +306,29 @@ class MenuPanel(NSObject):
         y += 26 + 12
 
         root.setFrame_(NSMakeRect(0, 0, W, y))
-        vc = NSViewController.alloc().init()
-        vc.setView_(root)
-        pop = NSPopover.alloc().init()
-        pop.setContentViewController_(vc)
-        pop.setContentSize_((W, y))
-        pop.setBehavior_(NSPopoverBehaviorTransient)
-        pop.setDelegate_(self)
-        self._vc = vc
-        self.popover = pop
+        return root, y
 
-    # --- refresh + acties ---
     @objc.python_method
-    def refresh(self):
-        state, _ = self._hud.snapshot()
-        self._status_dot.layer().setBackgroundColor_(_cg(_STATE_RGB[state]))
-        self._status_label.setStringValue_(_STATE_LABEL[state])
-        last = self._hud.last_text()
-        if last:
-            shown = last if len(last) <= 140 else last[:139] + "…"
-            self._last_label.setStringValue_(f"“{shown}”")
-            self._last_label.setTextColor_(NSColor.labelColor())
-            self._copy_btn.setEnabled_(True)
-        else:
-            self._last_label.setStringValue_("Nog niets gedicteerd")
-            self._last_label.setTextColor_(NSColor.tertiaryLabelColor())
-            self._copy_btn.setEnabled_(False)
-        for sw, key in self._switches:
-            sw.setState_(NSControlStateValueOn if settings.get(key) else NSControlStateValueOff)
+    def _rebuild(self):
+        root, h = self._make_view()
+        self._vc.setView_(root)
+        self.popover.setContentSize_((W, h))
+
+    @objc.python_method
+    def toggle(self, button):
+        if self.popover.isShown():
+            self.popover.performClose_(None)
+            return
+        self._rebuild()
+        self.popover.showRelativeToRect_ofView_preferredEdge_(
+            button.bounds(), button, NSMinYEdge)
+        NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+        win = self._vc.view().window()
+        if win is not None:
+            win.makeKeyWindow()
 
     def toggleSwitch_(self, sender):
         for sw, key in self._switches:
             if sw.tag() == sender.tag():
                 settings.set(key, sender.state() == NSControlStateValueOn)
                 break
-
-    def popoverWillShow_(self, _note):
-        self.refresh()
-
-    @objc.python_method
-    def toggle(self, button):
-        if self.popover.isShown():
-            self.popover.performClose_(None)
-        else:
-            self.refresh()
-            self.popover.showRelativeToRect_ofView_preferredEdge_(
-                button.bounds(), button, NSMinYEdge)
-            # Activeer de app + maak het popover-venster key, anders rendert macOS
-            # de switches in de inactieve (grijze) stijl i.p.v. groen -- ze lijken
-            # dan uit terwijl ze aan staan, tot je klikt. Veilig: het paneel is een
-            # bewuste klik, en de Fn-tap is globaal, dus focus doet er niet toe.
-            NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
-            win = self._vc.view().window()
-            if win is not None:
-                win.makeKeyWindow()
-
-
-def _framed(view, frame):
-    view.setFrame_(frame)
-    return view
