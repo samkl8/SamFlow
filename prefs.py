@@ -22,7 +22,7 @@ from AppKit import (
     NSApplication, NSApplicationActivationPolicyAccessory, NSBackingStoreBuffered,
     NSBox, NSBoxSeparator, NSButton, NSColor, NSControlStateValueOff,
     NSControlStateValueOn, NSFont, NSMakeRect, NSSegmentedControl,
-    NSSegmentSwitchTrackingSelectOne, NSSwitch, NSTextAlignmentRight, NSTextField,
+    NSSegmentSwitchTrackingSelectOne, NSTextAlignmentRight, NSTextField,
     NSView, NSWindow, NSWindowStyleMaskClosable, NSWindowStyleMaskTitled,
 )
 from ApplicationServices import AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt
@@ -35,6 +35,7 @@ from Quartz import (
 
 import lexicon
 import settings
+import ui
 
 # ---------- layout ----------
 W = 470
@@ -172,7 +173,7 @@ class PreferencesWindow(NSObject):
     @objc.python_method
     def _switch(self, view, y, key):
         _row_label(view, y, *_ROW_TEXT[key])
-        sw = NSSwitch.alloc().init()
+        sw = ui.Toggle.alloc().init()
         sw.setFrame_(NSMakeRect(W - PAD - 40, y + (ROW_H - 22) / 2, 40, 22))
         sw.setState_(NSControlStateValueOn if settings.get(key) else NSControlStateValueOff)
         tag = len(self._tag_keys) + 1
@@ -226,7 +227,7 @@ class PreferencesWindow(NSObject):
             _separator(v, y)
         # start bij inloggen -- bron van waarheid is het OS-login-item, niet settings
         _row_label(v, y, "Start bij inloggen")
-        login = NSSwitch.alloc().init()
+        login = ui.Toggle.alloc().init()
         login.setFrame_(NSMakeRect(W - PAD - 40, y + (ROW_H - 22) / 2, 40, 22))
         login.setState_(NSControlStateValueOn if _login_item_present() else NSControlStateValueOff)
         login.setTarget_(self)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Teken het SamFlow-icoon (donkere squircle + rode equalizer-balkjes) en render
+"""Teken het SamFlow-icoon (donkere squircle + lichte equalizer-balkjes) en render
 het naar PNG's op alle iconset-formaten + een preview. Pure AppKit, geen tools."""
 import os
 import sys
@@ -15,7 +15,7 @@ except ImportError:
 
 OUT = sys.argv[1] if len(sys.argv) > 1 else "."
 BARS = [0.40, 0.70, 1.00, 0.60, 0.34]      # equalizer-hoogtes
-RED = (1.00, 0.35, 0.32)
+INK = (0.94, 0.94, 0.95)     # off-white balkjes -- Helder: grafiet + wit; klei blijft voor de live-UI
 
 
 def draw(px):
@@ -31,8 +31,8 @@ def draw(px):
     r = NSMakeRect(margin, margin, px - 2 * margin, px - 2 * margin)
     corner = 232 * s
     bg = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(r, corner, corner)
-    top = NSColor.colorWithCalibratedRed_green_blue_alpha_(0.14, 0.14, 0.16, 1.0)
-    bot = NSColor.colorWithCalibratedRed_green_blue_alpha_(0.05, 0.05, 0.06, 1.0)
+    top = NSColor.colorWithCalibratedRed_green_blue_alpha_(0.173, 0.173, 0.192, 1.0)
+    bot = NSColor.colorWithCalibratedRed_green_blue_alpha_(0.090, 0.090, 0.106, 1.0)
     NSGradient.alloc().initWithStartingColor_endingColor_(top, bot).drawInBezierPath_angle_(bg, -90.0)
     # dunne lichtrand bovenlangs
     NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.07).set()
@@ -43,7 +43,7 @@ def draw(px):
     bw, gap = 78 * s, 44 * s
     total = len(BARS) * bw + (len(BARS) - 1) * gap
     x = (px - total) / 2
-    NSColor.colorWithCalibratedRed_green_blue_alpha_(*RED, 1.0).set()
+    NSColor.colorWithCalibratedRed_green_blue_alpha_(*INK, 1.0).set()
     for h in BARS:
         bh = 300 * s * h + 96 * s
         y = (px - bh) / 2

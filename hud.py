@@ -54,26 +54,39 @@ UPDATE_FIRST_DELAY_SEC = 8
 UPDATE_INTERVAL_SEC = 6 * 3600
 
 # ---------- config ----------
-PILL_W, PILL_H = 168.0, 46.0
+PILL_W, PILL_H = 92.0, 30.0     # compact & clean -- was 168x46
 FOLLOW_CARET = True        # place the pill where you type, not bottom-centre
-CARET_GAP = 14.0           # points between the caret and the pill
+CARET_GAP = 12.0           # points between the caret and the pill
 SCREEN_MARGIN = 12.0       # never sit flush against a screen edge
 PILL_BOTTOM = 130.0        # fallback height above the bottom of the screen
 BARS = 5
-BAR_W, BAR_GAP = 5.0, 7.0
-BAR_MIN, BAR_MAX = 4.0, 24.0
+BAR_W, BAR_GAP = 3.5, 4.5
+BAR_MIN, BAR_MAX = 3.0, 15.0
 DONE_FLASH_SEC = 0.7
 WINDOW_LEVEL = 25          # NSStatusWindowLevel: above normal windows, below alerts
 # ----------------------------
 
-_ACCENT = {
-    "recording": (1.00, 0.35, 0.32),   # red
-    "thinking": (0.45, 0.65, 1.00),    # blue
-    "done": (0.30, 0.85, 0.45),        # green
+# Kleuren binnen de pill (bij de cursor). Wit tijdens werken -- net als de witte
+# balkjes van het menu-glyph op de donkere pill -- en groen als 't klaar is:
+# dezelfde groen als de "klaar"-stip en de toggles in het menubalk-paneel.
+_WHITE = (0.94, 0.94, 0.95)
+_GREEN = (0.20, 0.72, 0.35)             # #33B859 -- gelijk aan het menu
+_CLAY = (0.776, 0.482, 0.322)           # #C67B52 -- nu alleen nog het menubalk-icoon
+_PILL = {
+    "recording": _WHITE,
+    "thinking": _WHITE,
+    "done": _GREEN,
 }
 
-# Kleuren voor het menubalk-icoon per status (idle is neutraal grijs).
-_STATUS_COLORS = dict(_ACCENT, idle=(0.60, 0.60, 0.62))
+# Kleuren voor het menubalk-icoon per status. Opnemen in klei zodat 't op zowel een
+# lichte als donkere menubalk zichtbaar blijft; idle neutraal grijs. Bewust los van
+# _PILL: wit zou op een lichte menubalk verdwijnen.
+_STATUS_COLORS = {
+    "recording": _CLAY,
+    "thinking": _CLAY,
+    "done": _CLAY,
+    "idle": (0.60, 0.60, 0.62),
+}
 
 
 def _status_image(state):
@@ -162,13 +175,14 @@ class _PillView(NSView):
 
         backdrop = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
             NSMakeRect(0, 0, PILL_W, PILL_H), PILL_H / 2, PILL_H / 2)
-        NSColor.colorWithCalibratedWhite_alpha_(0.09, 0.88).set()
+        # grafiet #1E1E22, licht doorschijnend -- leesbaar boven lichte én donkere apps
+        NSColor.colorWithCalibratedRed_green_blue_alpha_(0.118, 0.118, 0.133, 0.90).set()
         backdrop.fill()
         NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.10).set()
         backdrop.setLineWidth_(1.0)
         backdrop.stroke()
 
-        r, g, b = _ACCENT.get(state, (0.6, 0.6, 0.6))
+        r, g, b = _PILL.get(state, (0.9, 0.9, 0.9))
         NSColor.colorWithCalibratedRed_green_blue_alpha_(r, g, b, 1.0).set()
 
         if state == "recording":
@@ -183,7 +197,8 @@ class _PillView(NSView):
         x = (PILL_W - total) / 2
         for i in range(BARS):
             # a little phase offset per bar so a steady tone still looks alive
-            wobble = 0.55 + 0.45 * math.sin(t * 7.0 + i * 1.1)
+            # (kalmer dan voorheen -- cleaner beeld bij de kleinere pill)
+            wobble = 0.70 + 0.30 * math.sin(t * 6.0 + i * 1.1)
             h = BAR_MIN + (BAR_MAX - BAR_MIN) * level * wobble
             y = (PILL_H - h) / 2
             NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
@@ -191,11 +206,11 @@ class _PillView(NSView):
             x += BAR_W + BAR_GAP
 
     def _draw_dots(self, t):
-        d, gap = 7.0, 10.0
+        d, gap = 6.0, 8.0
         x = (PILL_W - (3 * d + 2 * gap)) / 2
         for i in range(3):
             alpha = 0.30 + 0.70 * (0.5 + 0.5 * math.sin(t * 4.0 - i * 0.8))
-            r, g, b = _ACCENT["thinking"]
+            r, g, b = _PILL["thinking"]
             NSColor.colorWithCalibratedRed_green_blue_alpha_(r, g, b, alpha).set()
             NSBezierPath.bezierPathWithOvalInRect_(
                 NSMakeRect(x, (PILL_H - d) / 2, d, d)).fill()
@@ -203,11 +218,12 @@ class _PillView(NSView):
 
     def _draw_tick(self):
         cx, cy = PILL_W / 2, PILL_H / 2
+        s = PILL_H / 46.0          # schaal mee met de pill-hoogte, blijft proportioneel
         p = NSBezierPath.bezierPath()
-        p.setLineWidth_(3.0)
-        p.moveToPoint_((cx - 9, cy + 1))
-        p.lineToPoint_((cx - 3, cy - 6))
-        p.lineToPoint_((cx + 10, cy + 8))
+        p.setLineWidth_(2.5)
+        p.moveToPoint_((cx - 9 * s, cy + 1 * s))
+        p.lineToPoint_((cx - 3 * s, cy - 6 * s))
+        p.lineToPoint_((cx + 10 * s, cy + 8 * s))
         p.stroke()
 
 

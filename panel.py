@@ -25,12 +25,13 @@ from AppKit import (
     NSFontWeightRegular, NSImage, NSImageLeft,
     NSImageSymbolConfiguration, NSMakeRect, NSMinYEdge, NSPopover,
     NSPopoverBehaviorTransient, NSControlStateValueOff, NSControlStateValueOn,
-    NSSwitch, NSTextAlignmentLeft, NSTextField, NSView, NSViewController,
+    NSTextAlignmentLeft, NSTextField, NSView, NSViewController,
 )
 from Foundation import NSObject
 from Quartz import CGColorCreateGenericRGB
 
 import settings
+import ui
 import updater
 
 W = 300
@@ -38,11 +39,13 @@ PAD = 16
 
 # Status -> (kleur, tekst). Lokaal gehouden i.p.v. uit hud geïmporteerd: hud
 # importeert deze module, dus andersom zou een cyclus geven.
+_CLAY = (0.776, 0.482, 0.322)          # #C67B52 — merk-accent (Helder)
+_GREEN = (0.20, 0.72, 0.35)            # semantisch groen: "klaar" + "update binnengehaald"
 _STATE_RGB = {
-    "idle": (0.30, 0.85, 0.45),        # groene "ready"-stip: klaar om te dicteren
-    "recording": (1.00, 0.35, 0.32),
-    "thinking": (0.45, 0.65, 1.00),
-    "done": (0.30, 0.85, 0.45),
+    "idle": _GREEN,                    # groene "ready"-stip: klaar om te dicteren
+    "recording": _CLAY,
+    "thinking": _CLAY,
+    "done": _CLAY,
 }
 _STATE_LABEL = {
     "idle": "klaar — houd Fn ingedrukt",
@@ -50,8 +53,7 @@ _STATE_LABEL = {
     "thinking": "transcriberen…",
     "done": "geplakt ✓",
 }
-_ACCENT = (0.90, 0.27, 0.24)
-_GREEN = (0.20, 0.72, 0.35)
+_ACCENT = _CLAY
 
 
 def _rgb(t, a=1.0):
@@ -98,13 +100,14 @@ def _framed(view, frame):
 
 
 class _GlyphView(NSView):
-    """Het app-merkje: rode equalizer-balkjes op een donker afgerond vierkant.
-    Statisch (de status leeft in de gekleurde stip ernaast), puur identiteit."""
+    """Het app-merkje: lichte equalizer-balkjes op een donker afgerond vierkant --
+    zelfde grafiet+wit als het app-icoon. Statisch (de status leeft in de stip
+    ernaast), puur identiteit."""
     def drawRect_(self, _rect):
         b = self.bounds()
         NSColor.colorWithCalibratedWhite_alpha_(0.09, 1.0).set()
         NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(b, 9, 9).fill()
-        _rgb(_STATE_RGB["recording"]).set()
+        _rgb((0.94, 0.94, 0.95)).set()      # off-white, gelijk aan het app-icoon
         heights = [0.42, 0.72, 1.00, 0.60]
         bw, gap = 3.0, 2.6
         total = len(heights) * bw + (len(heights) - 1) * gap
@@ -160,7 +163,7 @@ class MenuPanel(NSObject):
     @objc.python_method
     def _switch_row(self, root, y, label, key):
         root.addSubview_(_framed(_label(label, 13), NSMakeRect(PAD, y + 8, W - 90, 20)))
-        sw = NSSwitch.alloc().init()
+        sw = ui.Toggle.alloc().init()
         sw.setFrame_(NSMakeRect(W - PAD - 38, y + 6, 38, 22))
         sw.setState_(NSControlStateValueOn if settings.get(key) else NSControlStateValueOff)
         sw.setTag_(len(self._switches) + 1)
@@ -256,7 +259,7 @@ class MenuPanel(NSObject):
         copy = NSButton.buttonWithTitle_target_action_("Kopiëren", self._ticker, "copyLastText:")
         copy.setBordered_(False)
         copy.setFont_(NSFont.systemFontOfSize_(11.5))
-        copy.setContentTintColor_(NSColor.systemRedColor())
+        copy.setContentTintColor_(NSColor.secondaryLabelColor())
         copy.setEnabled_(bool(last))
         copy.setFrame_(NSMakeRect(W - 2 * PAD - 66, 14, 60, 22))
         card.addSubview_(copy)
