@@ -50,6 +50,9 @@ _KEYBOARD_PANE = "x-apple.systempreferences:com.apple.preference.keyboard"
 LANG_LABELS = ["Nederlands", "English", "Automatisch"]
 LANG_CODES = ["nl", "en", "auto"]
 
+LOCK_LABELS = ["Uit", "Tik", "Dubbel-tik", "Fn+⌘"]
+LOCK_CODES = ["off", "tap", "double", "chord"]
+
 
 # ---------- permissie-helpers (zelfstandig, zie module-docstring) ----------
 def _mic_ok():
@@ -218,6 +221,21 @@ class PreferencesWindow(NSObject):
         kv.setFrame_(NSMakeRect(W - PAD - 60, y + (ROW_H - 18) / 2, 60, 18))
         kv.setAlignment_(NSTextAlignmentRight)
         v.addSubview_(kv)
+        y += ROW_H
+        _separator(v, y)
+        # vastzetten (hands-free): niet blijven vasthouden voor een langer dictaat
+        _row_label(v, y, "Vastzetten", "Zodat je Fn niet hoeft vast te houden")
+        lock = NSSegmentedControl.segmentedControlWithLabels_trackingMode_target_action_(
+            LOCK_LABELS, NSSegmentSwitchTrackingSelectOne, self, "changeLockMode:")
+        try:
+            lidx = LOCK_CODES.index(settings.get("lock_mode"))
+        except ValueError:
+            lidx = 0
+        lock.setSelectedSegment_(lidx)
+        lock.sizeToFit()
+        lw = lock.frame().size.width
+        lock.setFrame_(NSMakeRect(W - PAD - lw, y + (ROW_H - 24) / 2, lw, 24))
+        v.addSubview_(lock)
         y += ROW_H + SEC_GAP
 
         y = _section(v, y, "Gedrag")
@@ -266,6 +284,11 @@ class PreferencesWindow(NSObject):
         i = sender.selectedSegment()
         if 0 <= i < len(LANG_CODES):
             settings.set("language", LANG_CODES[i])
+
+    def changeLockMode_(self, sender):
+        i = sender.selectedSegment()
+        if 0 <= i < len(LOCK_CODES):
+            settings.set("lock_mode", LOCK_CODES[i])
 
     def toggleLogin_(self, sender):
         _login_item_set(sender.state() == NSControlStateValueOn)

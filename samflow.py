@@ -295,26 +295,91 @@ def run_daemon():
     guard = media_module.MediaGuard() if PAUSE_MEDIA else None
     tap = None
 
+    # Vastzetten (hands-free), zie de "Vastzetten"-voorkeur (lock_mode). 'locked'
+    # betekent: doorgaan met opnemen ná Fn-loslaten, tot Fn 'm weer stopt.
+    #   off    = alleen vasthouden (zoals vanouds)
+    #   tap    = korte Fn-tik zet vast
+    #   double = dubbele Fn-tik zet vast
+    #   chord  = Fn + ⌘ zet vast
+    TAP_MAX = 0.35        # Fn omlaag->omhoog korter dan dit is een "tik", geen "houden"
+    DOUBLE_GAP = 0.40     # twee tikken binnen dit venster = een dubbel-tik
+    locked = False
+    press_t = 0.0
+    last_tap_t = 0.0
+    fn_was_held = False   # vorige Fn-stand: scheidt een échte Fn-druk van een modifier
+                          # (⌘) die verandert terwijl Fn al omlaag is
+
+    def begin():
+        # Eerst pauzeren, dan pas opnemen: de pre-roll van vóór de Fn-druk zou
+        # anders muziek bevatten. Detectie kost ~20 ms, dat merk je niet.
+        paused = guard.pause() if (guard and settings.get("pause_media")) else []
+        if paused:
+            print(f"  ⏸ {', '.join(name for _, name in paused)}")
+        cue("start")
+        hud_state("recording")
+        rec.start(use_preroll=not paused)
+
+    def end():
+        hud_state("thinking")
+        audio = rec.stop()
+        if guard:
+            guard.resume()
+        threading.Thread(target=handle, args=(audio,), daemon=True).start()
+
     def on_event(proxy, type_, event, refcon):
+        nonlocal locked, press_t, last_tap_t, fn_was_held
         if type_ in TAP_DISABLED:
             CGEventTapEnable(tap, True)
             return event
-        fn_held = bool(CGEventGetFlags(event) & FN_MASK)
-        if fn_held and not rec.recording:
-            # Eerst pauzeren, dan pas opnemen: de pre-roll van vóór de Fn-druk zou
-            # anders muziek bevatten. Detectie kost ~20 ms, dat merk je niet.
-            paused = guard.pause() if (guard and settings.get("pause_media")) else []
-            if paused:
-                print(f"  ⏸ {', '.join(name for _, name in paused)}")
-            cue("start")
-            hud_state("recording")
-            rec.start(use_preroll=not paused)
-        elif not fn_held and rec.recording:
-            hud_state("thinking")
-            audio = rec.stop()
-            if guard:
-                guard.resume()
-            threading.Thread(target=handle, args=(audio,), daemon=True).start()
+        flags = CGEventGetFlags(event)
+        fn_held = bool(flags & FN_MASK)
+        cmd_held = bool(flags & kCGEventFlagMaskCommand)
+        mode = settings.get("lock_mode")     # per event herlezen; live wisselbaar
+        now = time.monotonic()
+
+        fn_down = fn_held and not fn_was_held      # Fn zojuist ingedrukt
+        fn_up = (not fn_held) and fn_was_held      # Fn zojuist losgelaten
+        fn_was_held = fn_held
+
+        if fn_down:
+            if rec.recording and locked:           # Fn opnieuw ingedrukt = stoppen
+                end()
+                locked = False
+                last_tap_t = 0.0
+                return event
+            if not rec.recording:                  # starten
+                press_t = now
+                if mode == "double" and last_tap_t and (now - last_tap_t) < DOUBLE_GAP:
+                    begin()                        # tweede tik van een dubbel-tik
+                    locked = True
+                    last_tap_t = 0.0
+                else:
+                    begin()
+                    locked = False
+            return event
+
+        if fn_up:
+            if not rec.recording or locked:        # losgelaten terwijl vastgezet: door
+                return event
+            elapsed = now - press_t
+            if mode == "tap" and elapsed < TAP_MAX:
+                locked = True                      # korte tik zet vast
+                return event
+            if mode == "double" and elapsed < TAP_MAX:
+                rec.stop()                         # eerste tik: weggooien, wacht op #2
+                if guard:
+                    guard.resume()
+                hud_state("idle")
+                last_tap_t = now
+                return event
+            end()                                  # houden losgelaten (of mode uit)
+            last_tap_t = 0.0
+            return event
+
+        # Geen Fn-transitie: een modifier veranderde. In de chord-modus zet Fn + ⌘
+        # tijdens het opnemen vast (⌘ typt niets, dus veilig in de listen-only tap).
+        if mode == "chord" and rec.recording and not locked and fn_held and cmd_held:
+            locked = True
         return event
 
     tap = CGEventTapCreate(kCGSessionEventTap, kCGHeadInsertEventTap,
