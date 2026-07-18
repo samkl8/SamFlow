@@ -36,7 +36,9 @@ from AppKit import (
     NSImageScaleProportionallyUpOrDown, NSImageSymbolConfiguration, NSImageView,
     NSMakePoint, NSMakeRect, NSNoBorder, NSPasteboard, NSPasteboardTypeString,
     NSScrollView, NSSearchField, NSTextAlignmentCenter, NSTextAlignmentRight,
-    NSTextField, NSTimer, NSView, NSViewHeightSizable, NSViewMinYMargin,
+    NSTextField, NSTimer, NSTrackingActiveInKeyWindow,
+    NSTrackingArea, NSTrackingMouseEnteredAndExited,
+    NSView, NSViewHeightSizable, NSViewMinYMargin,
     NSViewWidthSizable, NSWindow, NSWindowStyleMaskClosable,
     NSWindowStyleMaskMiniaturizable, NSWindowStyleMaskResizable,
     NSWindowStyleMaskTitled,
@@ -292,15 +294,75 @@ class _WeekChart(NSView):
             num = None
         if num is not None:
             self.addSubview_(num)
+        self._today_num = num          # blijft altijd staan; hover-getal is apart
+        self._slot = slot
+        self._hover = -1
+        # Eén herbruikbaar getal-label dat we boven de gehoverde balk schuiven. Zo
+        # zie je ook bij de andere dagen hoeveel woorden, zonder alle zeven getallen
+        # vast te tonen (dat was juist de rust van de grafiek).
+        self._hover_num = ui.label("", 11, "bold")
+        self._hover_num.setAlignment_(NSTextAlignmentCenter)
+        self._hover_num.setHidden_(True)
+        self.addSubview_(self._hover_num)
         return self
 
     def isFlipped(self):
         return False   # bars groeien van onderen (y=0 = basislijn boven de labels)
 
+    def updateTrackingAreas(self):
+        # Eén tracking-area per dag-kolom, met enter/exit -- die komen altijd door, óók
+        # zonder acceptsMouseMovedEvents op het venster (anders dan mouseMoved). De
+        # kolom-index reist mee in userInfo. AppKit roept dit ook bij resize aan; de
+        # dashboard-herbouw maakt de view sowieso opnieuw, dit is het vangnet.
+        objc.super(_WeekChart, self).updateTrackingAreas()
+        for ta in list(self.trackingAreas()):
+            self.removeTrackingArea_(ta)
+        h = self.bounds().size.height
+        opts = NSTrackingMouseEnteredAndExited | NSTrackingActiveInKeyWindow
+        for i in range(7):
+            rect = NSMakeRect(self._slot * i, 0, self._slot, h)
+            self.addTrackingArea_(NSTrackingArea.alloc()
+                .initWithRect_options_owner_userInfo_(rect, opts, self, {"slot": i}))
+
+    def _event_slot(self, event):
+        # userInfo() komt als gewone dict terug (PyObjC-brug); [] werkt óók op een
+        # NSDictionary, dus dit blijft goed mocht dat ooit veranderen.
+        ta = event.trackingArea()
+        info = ta.userInfo() if ta is not None else None
+        if not info:
+            return -1
+        try:
+            return int(info["slot"])
+        except (KeyError, TypeError, ValueError):
+            return -1
+
+    def mouseEntered_(self, event):
+        self._set_hover(self._event_slot(event))
+
+    def mouseExited_(self, event):
+        # Alleen wissen als we de kolom verlaten die nú oplicht: bij het schuiven naar
+        # een buur kan enter(nieuw) vóór exit(oud) komen -- dan niet per ongeluk wissen.
+        if self._event_slot(event) == self._hover:
+            self._set_hover(-1)
+
+    def _set_hover(self, i):
+        self._hover = i
+        # Boven vandaag staat het getal al vast -> geen dubbel hover-getal daar.
+        show = i >= 0 and not (i == self._today and self._today_num is not None)
+        if show:
+            bx, bw, bh = self._bars[i]
+            self._hover_num.setStringValue_(_nl_int(self._words[i]))
+            self._hover_num.setFrame_(
+                NSMakeRect(self._slot * i, self._base_y + bh + 2, self._slot, 15))
+        self._hover_num.setHidden_(not show)
+        self.setNeedsDisplay_(True)   # herteken: gehoverde balk licht op
+
     def drawRect_(self, _rect):
         for i, (bx, bw, bh) in enumerate(self._bars):
             if i == self._today:
                 _rgb(_CLAY, 1.0).set()
+            elif i == self._hover:
+                _rgb(_CLAY, 0.62).set()   # opgelicht onder de cursor
             else:
                 _rgb(_CLAY, 0.40).set()
             r = NSMakeRect(bx, self._base_y, bw, max(bh, 2.0))
