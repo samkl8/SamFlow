@@ -195,23 +195,46 @@ class Recorder:
                 self._close()
 
     def _open(self):
-        if self.stream is None:
-            # Kies de mic elke keer opnieuw: koppel je AirPods los, dan wisselt de
-            # keuze mee. Opnemen van een Bluetooth-mic zou je muziek naar telefoon-
-            # kwaliteit trekken, dus 'auto' mijdt die - zie audiodev.py.
+        if self.stream is not None:
+            return
+        # Kies de mic elke keer opnieuw: koppel je AirPods los, dan wisselt de
+        # keuze mee. Opnemen van een Bluetooth-mic zou je muziek naar telefoon-
+        # kwaliteit trekken, dus 'auto' mijdt die - zie audiodev.py.
+        # Bouw de stream in een lokale var en hang 'm pas ná start() aan self: zo
+        # blijft er nooit een half-geopende stream achter waardoor _open zichzelf
+        # zou overslaan. En vang CoreAudio-fouten hier af -- een AUHAL-hik na een
+        # apparaatwissel (bv. err=-10851) mag de Fn-callback op de main thread nooit
+        # als exceptie bereiken, want dan valt de event-tap stil. Faalt het openen,
+        # dan neemt dit dictaat niets op (de energie-poort verwerpt de stilte netjes)
+        # en probeert de volgende Fn-druk opnieuw.
+        try:
             device, name, _ = audiodev.choose_input()
-            self.stream = sd.InputStream(samplerate=SAMPLE_RATE, channels=1,
-                                         dtype="int16", blocksize=BLOCK,
-                                         device=device, callback=self._callback)
-            self.stream.start()
+            stream = sd.InputStream(samplerate=SAMPLE_RATE, channels=1,
+                                    dtype="int16", blocksize=BLOCK,
+                                    device=device, callback=self._callback)
+            stream.start()
+            self.stream = stream
+        except Exception as e:
+            self.stream = None
+            print(f"  ! mic openen mislukt: {e}")
 
     def _close(self):
+        # Haal de stream-referentie ónder de lock weg, maar stop/sluit 'm BUITEN de
+        # lock. stream.stop()/close() zijn CoreAudio-calls die kunnen blokkeren als
+        # het audio-apparaat in een slechte staat schiet (apparaatwissel -> AUHAL-
+        # fout). De lock hier vasthouden zou de Fn-tap op de main thread op die lock
+        # laten wachten -> de hele app bevriest (echt gebeurd: HAL-mutex-deadlock in
+        # AudioOutputUnitStop). Zo raakt geen enkele CoreAudio-call ooit de lock, en
+        # kan de Fn-callback de lock altijd meteen pakken.
         with self.lock:
-            if self.stream:
-                self.stream.stop()
-                self.stream.close()
-                self.stream = None
-                self.preroll.clear()
+            stream, self.stream = self.stream, None
+            self.preroll.clear()
+        if stream is not None:
+            try:
+                stream.stop()
+                stream.close()
+            except Exception as e:
+                print(f"  ! mic sluiten mislukt: {e}")
 
     def start(self, use_preroll: bool = True):
         self._open()
