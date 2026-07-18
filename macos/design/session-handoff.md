@@ -225,9 +225,25 @@ deployt via auto-update), of doorwerken en later splitsen. **Alleen op verzoek.*
 - Instelbaar met verstandige default; gerenderde mockups om opties te zien.
 - Geen AI-slop; Helder-merk: grafiet `#1E1E22`, klei `#C67B52`, groen `#33B859`. Géén indigo/rood.
 - **Zijbalk:** SF-Symbol-iconen + klei-getinte actieve rij (koos dit boven de mockup-variant).
-- Functie-eerst, design daarna. **Route B** (lokaal oppoets-model, Fase O) is het grote
-  resterende functionele stuk — nog niet besloten of we 't doen. Fase 7 (distributie) is
-  grotendeels moot voor zijn doelgroep; Fase 8 (telemetrie) blijft uitgesteld.
+- Functie-eerst, design daarna. **Route B** (lokaal oppoets-model, Fase O) is nu **gebouwd als
+  opt-in** — zie hieronder. Fase 7 (distributie) is grotendeels moot voor zijn doelgroep;
+  Fase 8 (telemetrie) blijft uitgesteld.
+
+### Route B — lokale AI-oppoets (gebouwd deze sessie, opt-in, default UIT)
+`polish.py`: hangt ná `cleanup.clean` (Route A) in `samflow.handle()`, op de handle-thread.
+Roept een lokaal Ollama-model aan (`qwen2.5:3b`, HTTP `127.0.0.1:11434`) met een strenge
+"polijst-niet-herschrijf"-prompt + few-shot (temp 0). **Default UIT** (`settings['polish_enabled']`
+=False): uit = geen call, geen model, geen RAM — knop in Instellingen → Dicteren → "AI-oppoetsen".
+**Vangrail:** bij élke fout (Ollama weg, model niet gepulld, timeout, leeg, of lengte te
+afwijkend via `_sane`) → gewoon de Route-A-tekst terug; nooit een exceptie naar de Fn-lus.
+- **Prototype-bevinding (waarom opt-in):** latency is prima (warm ~0,6s), maar de 3B is niet
+  100% trouw — met de strenge prompt 3/4 goed, harde zelfcorrecties ("de… nee wacht") blijven
+  fragiel. Een subtiele betekeniswijziging vangt de lengte-vangrail níét. Daarom bewust opt-in,
+  default uit, Route A blijft eronder. Groter model (7-8B) = trouwer maar ~2s + ~5 GB RAM.
+- **Mac-headroom:** M3 Max, 36 GB (ruim), maar draait vaak vol; schijf krap (~18 GB vrij, model
+  = 1,9 GB). `keep_alive=5m` geeft de RAM vrij als je 't niet gebruikt.
+- Model verwijderen: `ollama rm qwen2.5:3b`. Advanced knoppen (`polish_model`, keep_alive,
+  timeout) zitten in settings/polish.py, niet in de UI.
 - Doelgroep: jezelf + een paar bekenden (geen €99 Apple Developer; lokaal bouwen omzeilt de
   Gatekeeper-notarisatiehek). Nederlands, zakelijk, leg *waarom* uit.
 

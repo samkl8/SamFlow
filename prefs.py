@@ -449,6 +449,7 @@ class PrefsController(NSObject):
             self._grp_keycap("Sneltoets", "Ingedrukt houden = opnemen", "fn"),
             self._grp_seg("Vastzetten", "Zodat je Fn niet hoeft vast te houden",
                           LOCK_LABELS, LOCK_CODES, "lock_mode", "changeLockMode:"),
+            self._grp_switch("polish_enabled"),
         ])
         y += SEC_GAP
 
@@ -632,6 +633,8 @@ class PreferencesWindow(NSObject):
 
 
 _ROW_TEXT = {
+    "polish_enabled": ("AI-oppoetsen (lokaal)",
+                       "Een lokaal model maakt er nette zinnen van. Kost ~0,6s extra en RAM; uit = alleen de regels."),
     "sound_cues": ("Geluiden", "Klik bij start, stop en klaar"),
     "pause_media": ("Media pauzeren tijdens dictaat", None),
     "show_pill": ("Pill bij de cursor tonen", None),
