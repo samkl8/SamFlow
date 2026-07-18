@@ -244,12 +244,94 @@ def add_mapping(heard, canon):
     return True
 
 
+def custom_terms():
+    """Alleen de persoonlijke termen uit lexicon.txt (dus zonder DEFAULT_TERMS). Voor
+    de UI: die staan in de code en kunnen niet weg; deze wél."""
+    return list(_read(LEXICON_FILE, lambda lines: lines))
+
+
+# ---------- niet-interactieve leer-loop-API (gedeeld door --review en de UI) ----------
+
+def suggestions(top=REVIEW_TOP):
+    """Vaak-gehoorde onbekende woorden als [(woord, aantal)], gerankt en zonder de
+    genegeerde -- dezelfde selectie die review() toont."""
+    data = _load_candidates()
+    ignored = set(data["ignored"])
+    ranked = sorted(data["counts"].items(), key=lambda kv: kv[1], reverse=True)
+    return [(w, n) for w, n in ranked if w not in ignored][:top]
+
+
+def _resolve_candidate(word):
+    """Haal een afgehandeld kandidaat-woord uit de teller en zet 'm op ignored, zodat
+    hij niet opnieuw wordt voorgesteld."""
+    data = _load_candidates()
+    data["counts"].pop(word, None)
+    if word not in data["ignored"]:
+        data["ignored"].append(word)
+    _save_candidates(data)
+
+
+def accept(word, spelling=None):
+    """Voeg een kandidaat toe als term (met optionele schrijfwijze) en handel 'm af."""
+    if add_term(spelling or word):
+        _resolve_candidate(word)
+        return True
+    return False
+
+
+def map_to(word, canon):
+    """Leer een kandidaat als fonetische mapping (word = canon) en handel 'm af."""
+    if add_mapping(word, canon):
+        _resolve_candidate(word)
+        return True
+    return False
+
+
+def ignore(word):
+    """Negeer een kandidaat voorgoed -- nooit meer voorstellen."""
+    _resolve_candidate(word)
+
+
+# ---------- verwijderen (regel-gefilterd, comments/volgorde behouden) ----------
+
+def _rewrite_lines(path, keep):
+    """Herschrijf een bestand regel voor regel: keep(inhoud) bepaalt of een niet-
+    comment-regel blijft. Comment- en lege regels blijven altijd staan, zodat de
+    bestanden hand-bewerkbaar blijven. Atomisch; invalideert de mtime-cache."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            original = f.readlines()
+    except OSError:
+        return
+    out = [ln for ln in original
+           if not ln.split("#", 1)[0].strip() or keep(ln.split("#", 1)[0].strip())]
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.writelines(out)
+    os.replace(tmp, path)
+    _cache.pop(path, None)
+
+
+def remove_term(term):
+    """Verwijder een persoonlijke term uit lexicon.txt (hoofdletterongevoelig).
+    DEFAULT_TERMS staan in de code en kunnen hier niet weg."""
+    t = term.strip().lower()
+    _rewrite_lines(LEXICON_FILE, lambda line: line.lower() != t)
+
+
+def remove_mapping(heard):
+    """Verwijder een correctie uit mappings.txt op de gehoorde vorm (links van '=')."""
+    h = heard.strip().lower()
+    _rewrite_lines(
+        MAPPINGS_FILE,
+        lambda line: "=" not in line or line.split("=", 1)[0].strip().lower() != h)
+
+
 def review():
     """Interactief: toont vaak-gehoorde onbekende woorden en laat je ze afhandelen.
-    Bedoeld voor `samflow.py --review` vanuit een terminal."""
-    data = _load_candidates()
-    ranked = sorted(data["counts"].items(), key=lambda kv: kv[1], reverse=True)
-    ranked = [(w, n) for w, n in ranked if w not in set(data["ignored"])][:REVIEW_TOP]
+    Bedoeld voor `samflow.py --review` vanuit een terminal. Deelt de bewegingen
+    (suggestions/accept/map_to/ignore) met de Woordenlijst-UI."""
+    ranked = suggestions()
     if not ranked:
         print("Niets te reviewen -- nog geen onbekende woorden verzameld.")
         return
@@ -263,24 +345,18 @@ def review():
             break
         if choice == "a":
             spelling = input(f"      schrijfwijze [{word}]: ").strip() or word
-            if add_term(spelling):
-                data["counts"].pop(word, None)
-                data["ignored"].append(word)
+            if accept(word, spelling):
                 print(f"      + '{spelling}' toegevoegd aan lexicon.txt")
             else:
                 print("      ongeldig (te kort), overgeslagen")
         elif choice == "m":
             canon = input(f"      '{word}' hoort te zijn (canonieke vorm): ").strip()
-            if add_mapping(word, canon):
-                data["counts"].pop(word, None)
-                data["ignored"].append(word)
+            if map_to(word, canon):
                 print(f"      + '{word} = {canon}' toegevoegd aan mappings.txt")
             else:
                 print("      ongeldig (leeg of te kort) -- niet opgeslagen")
         elif choice == "i":
-            data["counts"].pop(word, None)
-            data["ignored"].append(word)
-    _save_candidates(data)
+            ignore(word)
     print("\nKlaar. Nieuwe termen tellen meteen mee -- geen herstart nodig.")
 
 
