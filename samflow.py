@@ -55,6 +55,7 @@ import history
 import hud as hud_module
 import lexicon
 import media as media_module
+import polish
 import settings
 import stats
 import telemetry
@@ -283,6 +284,11 @@ def handle(audio: np.ndarray, do_paste: bool = True, app: str = None):
         print(f"  ({seconds:.1f}s spraak, niets bruikbaars: {raw.strip()!r})")
         hud_state("idle")
         return
+
+    # Route B (optioneel, opt-in): een lokaal model poetst de tekst nog een slag op.
+    # Uit (default) of bij fout: onveranderd terug. Draait op deze handle-thread, dus
+    # blokkeert de run loop niet. Zie polish.py voor de vangrail.
+    text = polish.polish(text)
 
     # onthoud wat we nog niet kenden; voer voor `samflow.py --review` (zie lexicon.py)
     lexicon.record(raw)

@@ -29,6 +29,8 @@ DEFAULTS = {
     "pill_size": "fors",       # staafjes-grootte: "compact" | "ruim" | "fors"
     "pill_motion": "soepel",   # animatie-gevoel: "soepel" | "kwiek"
     "model": "turbo",     # "turbo" | "large-v3" -- nog niet live, zie voorkeuren
+    "polish_enabled": False,        # Route B (opt-in): lokaal AI-model poetst de tekst extra op na de regels. Uit = alleen Route A (cleanup.py); aan = ~0,6s + RAM. Zie polish.py
+    "polish_model": "qwen2.5:3b",   # het Ollama-model voor het oppoetsen
     "auto_update": True,  # op de achtergrond bijwerken vanaf GitHub (fast-forward)
     "keep_alive": True,   # watchdog brengt de app terug als 'ie onverwacht stopt (zie launchd/watchdog.sh)
     "share_usage": True,  # anonieme dagelijkse heartbeat (alleen tellen, nooit inhoud); zie telemetry.py
