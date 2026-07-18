@@ -1,0 +1,137 @@
+"""
+stats.py - lokale, inhoudsloze dag-aggregaten voor het dashboard.
+
+Per dag tellen we alleen: aantal dictaten, woorden, spraak-seconden, en de snelste
+en totale 'took' (transcriptietijd). **Geen tekst, geen app-namen -- puur getallen.**
+Daarom staat dit standaard aan (met een toggle): er is niets gevoeligs om te lekken,
+net als de "laatste dictaat"-teller die nu al in het geheugen leeft.
+
+Opslag: ~/Library/Application Support/SamFlow/stats.json -- buiten de repo/git (waar
+de updater en git-operaties nooit bij komen), in de map die telemetry al aanmaakt.
+Atomisch schrijven (mkstemp + os.replace), zelfde patroon als settings.py. Retentie
+RETAIN_DAYS, geprund bij het wegschrijven.
+
+De hook in samflow.handle() draait ná het plakken, op de handle-thread, fail-silent
+-- het dictaat gaat altijd voor (zelfde contract als lexicon.record()). Nooit de run
+loop of het plakken vertragen; summary() leest het bestand één keer bij openen/tik.
+"""
+import json
+import os
+import tempfile
+from datetime import date, timedelta
+
+import settings
+
+APP_SUPPORT = os.path.expanduser("~/Library/Application Support/SamFlow")
+STATS_FILE = os.path.join(APP_SUPPORT, "stats.json")
+
+RETAIN_DAYS = 400
+TYPING_WPM = 40    # aanname voor "tijd bespaard"; staat als subtekst in de UI
+
+
+def _read():
+    try:
+        with open(STATS_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (ValueError, OSError):
+        return {}
+
+
+def _write(data):
+    os.makedirs(APP_SUPPORT, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=APP_SUPPORT, prefix=".stats-", suffix=".json")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+        os.replace(tmp, STATS_FILE)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+
+
+def _blank():
+    return {"dictations": 0, "words": 0, "speech_sec": 0.0,
+            "fastest_took": None, "total_took": 0.0}
+
+
+def record(words, speech_sec, took):
+    """Tel één gelukt dictaat bij vandaag. Fail-silent aangeroepen vanuit handle();
+    no-op als de gebruiker statistieken heeft uitgezet."""
+    if not settings.get("stats_enabled"):
+        return
+    data = _read()
+    key = date.today().isoformat()
+    day = data.get(key) or _blank()
+    day["dictations"] += 1
+    day["words"] += int(words)
+    day["speech_sec"] += float(speech_sec)
+    day["total_took"] += float(took)
+    if day["fastest_took"] is None or took < day["fastest_took"]:
+        day["fastest_took"] = float(took)
+    data[key] = day
+    cutoff = (date.today() - timedelta(days=RETAIN_DAYS)).isoformat()
+    data = {k: v for k, v in data.items() if k >= cutoff}
+    _write(data)
+
+
+def mtime():
+    """De wijzigingstijd van stats.json, of None als 'ie (nog) niet bestaat. Een
+    goedkope stat()-call zodat het dashboard alleen herbouwt als er écht een dictaat
+    bij kwam (zie mainwindow.refreshTick_) -- geen schijf-lezing per timer-tik."""
+    try:
+        return os.path.getmtime(STATS_FILE)
+    except OSError:
+        return None
+
+
+def _val(data, d, key, default=0):
+    return data.get(d.isoformat(), {}).get(key, default) or default
+
+
+def summary():
+    """Een momentopname voor het dashboard: alle afgeleiden in één keer, uit één
+    bestandslezing. De UI-laag formatteert (Nederlandse komma's, "u/m")."""
+    data = _read()
+    today = date.today()
+    monday = today - timedelta(days=today.weekday())
+    week = [monday + timedelta(days=i) for i in range(7)]
+    prev = [monday - timedelta(days=7) + timedelta(days=i) for i in range(7)]
+
+    week_words = [int(_val(data, d, "words")) for d in week]
+    words_today = int(_val(data, today, "words"))
+    words_week = sum(week_words)
+    words_prev = sum(int(_val(data, d, "words")) for d in prev)
+    delta = (words_week - words_prev) / words_prev if words_prev > 0 else None
+
+    # tijd bespaard deze week: typtijd (woorden / 40 wpm) minus de spraaktijd
+    speech_week = sum(float(_val(data, d, "speech_sec", 0.0)) for d in week)
+    saved_sec = max(0.0, words_week / TYPING_WPM * 60.0 - speech_week)
+
+    fastest = None
+    for d in week:
+        f = data.get(d.isoformat(), {}).get("fastest_took")
+        if f is not None and (fastest is None or f < fastest):
+            fastest = f
+
+    # streak: aaneengesloten dagen met >=1 dictaat, t/m vandaag (of gisteren als
+    # vandaag nog leeg is, zodat één rustige ochtend de reeks niet meteen breekt).
+    streak = 0
+    d = today if _val(data, today, "dictations") else today - timedelta(days=1)
+    while data.get(d.isoformat(), {}).get("dictations", 0) > 0:
+        streak += 1
+        d -= timedelta(days=1)
+
+    total_dictations = sum(int(v.get("dictations", 0)) for v in data.values())
+
+    return {
+        "words_today": words_today,
+        "words_week": words_week,
+        "delta": delta,               # float (fractie) of None
+        "saved_sec": saved_sec,
+        "fastest": fastest,           # float (s) of None
+        "streak": streak,
+        "week_words": week_words,     # 7 ints, maandag..zondag
+        "today_index": today.weekday(),
+        "total_dictations": total_dictations,   # goedkope 'is er iets veranderd'-signatuur
+    }
