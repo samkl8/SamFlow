@@ -1182,7 +1182,11 @@ class MainWindow(NSObject):
             mic_ok = prefs._mic_ok()
             if mic_ok:
                 try:
-                    _, mic_name, _ = audiodev.choose_input()
+                    # Live uit CoreAudio, niet via choose_input(): dat pad leunt op de
+                    # bevroren PortAudio-lijst en zou hier na een AirPods-wissel een
+                    # verdwenen apparaat als naam tonen. effective_input_name() is actueel
+                    # én veilig terwijl er een opname loopt (geen PortAudio-aanraking).
+                    mic_name = audiodev.effective_input_name()
                 except Exception:
                     mic_name = None
                 mic_val = mic_name or "toegekend"
