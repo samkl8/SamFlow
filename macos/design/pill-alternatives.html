@@ -1,0 +1,116 @@
+<title>SamFlow — opname-pill, kleiner & cleaner</title>
+<style>
+  :root{
+    --sg:#f4f4f6; --ss:#ffffff; --si:#1b1b20; --sm:#5c5c66; --sf:#9a9aa4;
+    --sl:rgba(20,18,30,.10); --clay:#c67b52;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{ --sg:#0e0e12; --ss:#17171c; --si:#f1f1f4; --sm:#9a9aa4; --sf:#63636d; --sl:rgba(255,255,255,.10); }
+  }
+  :root[data-theme="light"]{ --sg:#f4f4f6; --ss:#fff; --si:#1b1b20; --sm:#5c5c66; --sf:#9a9aa4; --sl:rgba(20,18,30,.10); }
+  :root[data-theme="dark"]{ --sg:#0e0e12; --ss:#17171c; --si:#f1f1f4; --sm:#9a9aa4; --sf:#63636d; --sl:rgba(255,255,255,.10); }
+
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--sg); color:var(--si); font-family:var(--sans);
+    -webkit-font-smoothing:antialiased; line-height:1.55; }
+  .wrap{ max-width:860px; margin:0 auto; padding:44px 22px 72px; }
+  .eyebrow{ font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--clay); font-weight:700; margin:0 0 12px; }
+  h1{ font-size:clamp(26px,4.5vw,36px); letter-spacing:-.02em; margin:0 0 14px; line-height:1.08; text-wrap:balance; }
+  .intro{ font-size:15px; color:var(--sm); max-width:64ch; margin:0 0 8px; text-wrap:pretty; }
+  .intro b{ color:var(--si); font-weight:600; }
+
+  .row{ display:flex; flex-direction:column; gap:16px; margin-top:30px; }
+  .card{ background:var(--ss); border:.5px solid var(--sl); border-radius:16px; padding:18px 20px; }
+  .card.pick{ box-shadow:0 0 0 1.5px var(--clay); }
+  .chead{ display:flex; align-items:baseline; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
+  .chead h2{ font-size:16.5px; margin:0; letter-spacing:-.01em; }
+  .chead .sz{ font-family:var(--mono); font-size:11.5px; color:var(--sf); }
+  .chead .badge{ margin-left:auto; font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+    color:var(--clay); background:color-mix(in srgb,var(--clay) 15%, transparent); padding:3px 9px; border-radius:999px; }
+  .chead .badge.old{ color:var(--sf); background:var(--sl); }
+
+  .stages{ display:flex; gap:12px; }
+  .stage{ flex:1 1 0; height:78px; border-radius:12px; display:flex; align-items:center; justify-content:center;
+    position:relative; overflow:hidden; box-shadow:inset 0 0 0 .5px var(--sl); }
+  .stage.lite{ background:#eeeeec; } .stage.drk{ background:#1e1e22; }
+  .stage .cursor{ position:absolute; width:1.5px; height:26px; opacity:.45; left:32%; }
+  .stage.lite .cursor{ background:#1b1b20; } .stage.drk .cursor{ background:#f1f1f4; }
+
+  /* pill op ware grootte -- afmetingen per variant via inline custom props */
+  .pill{ height:var(--h); min-width:var(--w); padding:0 calc((var(--w) - var(--barsw)) / 2);
+    border-radius:calc(var(--h) / 2); background:rgba(30,30,34,.92);
+    box-shadow:inset 0 0 0 .5px rgba(255,255,255,.12);
+    display:flex; align-items:center; justify-content:center; gap:var(--gap); }
+  .pill i{ width:var(--bw); border-radius:calc(var(--bw) / 2); background:var(--clay);
+    transform-origin:center; animation:eq 1.15s ease-in-out infinite; }
+  .pill i:nth-child(1){ height:calc(var(--max) * .55); animation-delay:0s; }
+  .pill i:nth-child(2){ height:calc(var(--max) * .82); animation-delay:.13s; }
+  .pill i:nth-child(3){ height:var(--max); animation-delay:.26s; }
+  .pill i:nth-child(4){ height:calc(var(--max) * .66); animation-delay:.06s; }
+  .pill i:nth-child(5){ height:calc(var(--max) * .78); animation-delay:.19s; }
+  @keyframes eq{ 0%,100%{ transform:scaleY(.5); } 50%{ transform:scaleY(1); } }
+  @media (prefers-reduced-motion:reduce){ *{ animation:none !important; } }
+
+  .desc{ font-size:13px; color:var(--sm); margin:12px 0 0; }
+  .desc b{ color:var(--si); }
+  .foot{ margin-top:28px; font-size:13.5px; color:var(--sm); text-wrap:pretty; }
+  .foot b{ color:var(--si); }
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">SamFlow · opname-pill</p>
+  <h1>Zelfde balkjes, kleiner &amp; cleaner</h1>
+  <p class="intro">De balkjes-pill blijft — alleen compacter, met slankere staafjes, een strakkere gap en een kalmere beweging. Hieronder op <b>ware grootte</b>: het oude formaat, mijn nieuwe standaard, en een nóg kleinere variant zodat je kunt kiezen hoe klein je 't wilt. Telkens op licht én donker; de grijze streep is je tekstcursor, voor de schaal.</p>
+
+  <div class="row">
+
+    <!-- NU -->
+    <div class="card">
+      <div class="chead">
+        <h2>Nu</h2><span class="sz">168 × 46 · staaf 5 / gap 7</span>
+        <span class="badge old">huidig</span>
+      </div>
+      <div class="stages">
+        <div class="stage lite"><span class="cursor"></span>
+          <span class="pill" style="--w:168px;--h:46px;--bw:5px;--gap:7px;--max:24px;--barsw:53px;"><i></i><i></i><i></i><i></i><i></i></span></div>
+        <div class="stage drk"><span class="cursor"></span>
+          <span class="pill" style="--w:168px;--h:46px;--bw:5px;--gap:7px;--max:24px;--barsw:53px;"><i></i><i></i><i></i><i></i><i></i></span></div>
+      </div>
+    </div>
+
+    <!-- NIEUW STANDAARD -->
+    <div class="card pick">
+      <div class="chead">
+        <h2>Compact</h2><span class="sz">92 × 30 · staaf 3,5 / gap 4,5</span>
+        <span class="badge">nieuw · nu in de code</span>
+      </div>
+      <div class="stages">
+        <div class="stage lite"><span class="cursor"></span>
+          <span class="pill" style="--w:92px;--h:30px;--bw:3.5px;--gap:4.5px;--max:15px;--barsw:35.5px;"><i></i><i></i><i></i><i></i><i></i></span></div>
+        <div class="stage drk"><span class="cursor"></span>
+          <span class="pill" style="--w:92px;--h:30px;--bw:3.5px;--gap:4.5px;--max:15px;--barsw:35.5px;"><i></i><i></i><i></i><i></i><i></i></span></div>
+      </div>
+      <p class="desc"><b>Ongeveer een derde van het oude oppervlak.</b> Slankere staafjes, minder witruimte eromheen, rustigere uitslag — zelfde identiteit, veel ingetogener.</p>
+    </div>
+
+    <!-- MINI -->
+    <div class="card">
+      <div class="chead">
+        <h2>Mini</h2><span class="sz">78 × 26 · staaf 3 / gap 4</span>
+        <span class="badge old">nog kleiner</span>
+      </div>
+      <div class="stages">
+        <div class="stage lite"><span class="cursor"></span>
+          <span class="pill" style="--w:78px;--h:26px;--bw:3px;--gap:4px;--max:13px;--barsw:31px;"><i></i><i></i><i></i><i></i><i></i></span></div>
+        <div class="stage drk"><span class="cursor"></span>
+          <span class="pill" style="--w:78px;--h:26px;--bw:3px;--gap:4px;--max:13px;--barsw:31px;"><i></i><i></i><i></i><i></i><i></i></span></div>
+      </div>
+      <p class="desc">Als "Compact" nog te aanwezig is. Onder dit formaat worden de balkjes lastig leesbaar, dus dit is zo'n beetje de bodem.</p>
+    </div>
+
+  </div>
+
+  <p class="foot"><b>"Compact" (92 × 30) staat nu in <code>hud.py</code>.</b> Wil je liever "Mini", of iets ertussenin, dan is dat één regel. Zeg het maar — en of ik het meteen live moet zetten (samflow herstarten).</p>
+</div>

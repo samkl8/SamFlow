@@ -1,0 +1,118 @@
+<title>SamFlow — toggle-kleur</title>
+<style>
+  :root{
+    --sg:#f4f4f6; --ss:#ffffff; --si:#1b1b20; --sm:#5c5c66; --sf:#9a9aa4; --sl:rgba(20,18,30,.10);
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  @media (prefers-color-scheme:dark){ :root{ --sg:#0e0e12; --ss:#17171c; --si:#f1f1f4; --sm:#9a9aa4; --sf:#63636d; --sl:rgba(255,255,255,.10); } }
+  :root[data-theme="light"]{ --sg:#f4f4f6; --ss:#fff; --si:#1b1b20; --sm:#5c5c66; --sf:#9a9aa4; --sl:rgba(20,18,30,.10); }
+  :root[data-theme="dark"]{ --sg:#0e0e12; --ss:#17171c; --si:#f1f1f4; --sm:#9a9aa4; --sf:#63636d; --sl:rgba(255,255,255,.10); }
+
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--sg); color:var(--si); font-family:var(--sans); -webkit-font-smoothing:antialiased; line-height:1.5; }
+  .wrap{ max-width:760px; margin:0 auto; padding:44px 22px 70px; }
+  .eyebrow{ font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:#33b859; font-weight:700; margin:0 0 12px; }
+  h1{ font-size:clamp(25px,4.5vw,34px); letter-spacing:-.02em; margin:0 0 12px; line-height:1.1; text-wrap:balance; }
+  .intro{ font-size:15px; color:var(--sm); max-width:60ch; margin:0; text-wrap:pretty; }
+
+  .grid{ display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:30px; }
+  @media (max-width:560px){ .grid{ grid-template-columns:1fr; } }
+  .card{ background:var(--ss); border:.5px solid var(--sl); border-radius:16px; padding:16px 16px 18px; }
+  .card.rec{ box-shadow:0 0 0 1.5px #33b859; }
+  .card.ref{ opacity:.92; }
+  .chead{ display:flex; align-items:baseline; gap:8px; margin-bottom:12px; }
+  .chead h2{ font-size:16px; margin:0; letter-spacing:-.01em; }
+  .chead .hx{ font-family:var(--mono); font-size:11px; color:var(--sf); }
+  .chead .badge{ margin-left:auto; font-size:10px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; padding:3px 8px; border-radius:999px; }
+  .badge.g{ color:#33b859; background:rgba(51,184,89,.14); }
+  .badge.x{ color:var(--sf); background:var(--sl); }
+
+  .panes{ display:flex; gap:10px; }
+  .pane{ flex:1 1 0; border-radius:10px; padding:12px 13px; display:flex; flex-direction:column; gap:11px; box-shadow:inset 0 0 0 .5px var(--sl); }
+  .pane.lite{ background:#adadb2; } .pane.drk{ background:#2a2a2e; }
+  .rowline{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .rowline .lab{ font-size:12px; }
+  .pane.lite .lab{ color:#26262b; } .pane.drk .lab{ color:#e7e7ea; }
+
+  /* toggle */
+  .tg{ width:38px; height:22px; border-radius:11px; position:relative; flex:0 0 auto; }
+  .tg .knob{ position:absolute; top:3px; width:16px; height:16px; border-radius:50%; background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.25); }
+  .tg.on .knob{ right:3px; } .tg.off .knob{ left:3px; }
+  .tg.off{ background:rgba(120,120,128,.36); }
+
+  .foot{ margin-top:26px; font-size:13.5px; color:var(--sm); text-wrap:pretty; }
+  .foot b{ color:var(--si); }
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">SamFlow · toggle-kleur</p>
+  <h1>Welke kleur voor de schakelaars?</h1>
+  <p class="intro">De klei werkt goed als dun accent, maar als volle toggle-vulling wordt 'ie modderig. Hieronder dezelfde schakelaar in vier kleuren, op een licht én donker paneel (zoals het echte paneel zich aanpast). Aan- en uit-stand naast elkaar.</p>
+
+  <div class="grid">
+
+    <!-- GROEN (aanrader) -->
+    <div class="card rec">
+      <div class="chead"><h2>Groen</h2><span class="hx">#33B859</span><span class="badge g">aanrader</span></div>
+      <div class="panes">
+        <div class="pane lite">
+          <div class="rowline"><span class="lab">Geluiden</span><span class="tg on" style="background:#33b859"><span class="knob"></span></span></div>
+          <div class="rowline"><span class="lab">Media pauzeren</span><span class="tg off"><span class="knob"></span></span></div>
+        </div>
+        <div class="pane drk">
+          <div class="rowline"><span class="lab">Geluiden</span><span class="tg on" style="background:#33b859"><span class="knob"></span></span></div>
+          <div class="rowline"><span class="lab">Media pauzeren</span><span class="tg off"><span class="knob"></span></span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- GRAFIET -->
+    <div class="card">
+      <div class="chead"><h2>Grafiet</h2><span class="hx">#1E1E22</span><span class="badge x">monochroom</span></div>
+      <div class="panes">
+        <div class="pane lite">
+          <div class="rowline"><span class="lab">Geluiden</span><span class="tg on" style="background:#1e1e22"><span class="knob"></span></span></div>
+          <div class="rowline"><span class="lab">Media pauzeren</span><span class="tg off"><span class="knob"></span></span></div>
+        </div>
+        <div class="pane drk">
+          <div class="rowline"><span class="lab">Geluiden</span><span class="tg on" style="background:#5a5a62"><span class="knob"></span></span></div>
+          <div class="rowline"><span class="lab">Media pauzeren</span><span class="tg off"><span class="knob"></span></span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BLAUW -->
+    <div class="card">
+      <div class="chead"><h2>Blauw</h2><span class="hx">#0A84FF</span><span class="badge x">systeem</span></div>
+      <div class="panes">
+        <div class="pane lite">
+          <div class="rowline"><span class="lab">Geluiden</span><span class="tg on" style="background:#0a84ff"><span class="knob"></span></span></div>
+          <div class="rowline"><span class="lab">Media pauzeren</span><span class="tg off"><span class="knob"></span></span></div>
+        </div>
+        <div class="pane drk">
+          <div class="rowline"><span class="lab">Geluiden</span><span class="tg on" style="background:#0a84ff"><span class="knob"></span></span></div>
+          <div class="rowline"><span class="lab">Media pauzeren</span><span class="tg off"><span class="knob"></span></span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- KLEI (huidig, referentie) -->
+    <div class="card ref">
+      <div class="chead"><h2>Klei</h2><span class="hx">#C67B52</span><span class="badge x">nu — te modderig</span></div>
+      <div class="panes">
+        <div class="pane lite">
+          <div class="rowline"><span class="lab">Geluiden</span><span class="tg on" style="background:#c67b52"><span class="knob"></span></span></div>
+          <div class="rowline"><span class="lab">Media pauzeren</span><span class="tg off"><span class="knob"></span></span></div>
+        </div>
+        <div class="pane drk">
+          <div class="rowline"><span class="lab">Geluiden</span><span class="tg on" style="background:#c67b52"><span class="knob"></span></span></div>
+          <div class="rowline"><span class="lab">Media pauzeren</span><span class="tg off"><span class="knob"></span></span></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <p class="foot">Mijn voorkeur: <b>groen</b> — het is dezelfde tint als je "klaar"-stip, het is de universele "aan"-kleur (zoals iOS), en het blijft fris op grijs. <b>Grafiet</b> is de strakste bij Helder maar wordt op een donker paneel bijna onzichtbaar (vandaar daar een lichtere grafiet). De klei houden we voor accenten (opname-pill, kopieer-link). Zeg welke, dan zet ik 'm in <code>ui.py</code>.</p>
+</div>
