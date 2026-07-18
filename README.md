@@ -5,8 +5,8 @@ appears in whatever app has focus. Nothing leaves your machine: transcription ru
 on-device with [whisper.cpp](https://github.com/ggml-org/whisper.cpp) on the Apple
 Silicon GPU.
 
-Think of it as a self-hosted Wispr Flow / macOS Dictation replacement that you fully
-control and can teach your own vocabulary.
+Think of it as your own on-device dictation layer — as convenient as cloud dictation
+tools, but fully local, private, and teachable to your own vocabulary.
 
 - **Fast** — the model stays warm in a background service, so an 8-second clip
   transcribes in ~0.5s instead of the ~11s a cold start costs.
