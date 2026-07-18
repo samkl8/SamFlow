@@ -32,7 +32,9 @@ import wave
 import numpy as np
 import requests
 import sounddevice as sd
-from AppKit import NSPasteboard, NSPasteboardTypeString
+from AppKit import (
+    NSEvent, NSEventMaskKeyDown, NSPasteboard, NSPasteboardTypeString, NSWorkspace,
+)
 from Foundation import CFPreferencesCopyAppValue
 from ApplicationServices import AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt
 from AVFoundation import AVCaptureDevice, AVMediaTypeAudio
@@ -49,10 +51,13 @@ from Quartz import (
 
 import audiodev
 import cleanup
+import history
 import hud as hud_module
 import lexicon
 import media as media_module
 import settings
+import stats
+import telemetry
 
 # ---------- config ----------
 SERVER_URL = "http://127.0.0.1:8181/inference"
@@ -79,7 +84,10 @@ SOUNDS = {
     "start": "/System/Library/Sounds/Tink.aiff",
     "done": "/System/Library/Sounds/Pop.aiff",
     "error": "/System/Library/Sounds/Basso.aiff",
+    "cancel": "/System/Library/Sounds/Bottle.aiff",
 }
+
+KEY_ESC = 53               # keyCode van Esc -- breekt een lopend dictaat af
 
 # Event types that mean "the tap was switched off", not "a key changed".
 TAP_DISABLED = (0xFFFFFFFE, 0xFFFFFFFF)
@@ -222,7 +230,7 @@ class Recorder:
         return np.concatenate(frames) if frames else np.zeros(0, dtype=np.int16)
 
 
-def handle(audio: np.ndarray, do_paste: bool = True):
+def handle(audio: np.ndarray, do_paste: bool = True, app: str = None):
     seconds = len(audio) / SAMPLE_RATE
     if seconds < MIN_SPEECH_SEC:
         hud_state("idle")
@@ -263,6 +271,34 @@ def handle(audio: np.ndarray, do_paste: bool = True):
         paste(text)
         cue("done")
     hud_state("done")
+
+    # Inhoudsloze dag-telling voor het dashboard (alleen getallen, nooit tekst).
+    # Ná het plakken en fail-silent: het dictaat gaat altijd voor (zoals
+    # lexicon.record). Draait op de handle-thread, dus blokkeert de run loop niet.
+    if do_paste:
+        words = len(text.split())
+        try:
+            stats.record(words, seconds, took)
+        except Exception:
+            pass
+        # Opt-in historie (mét tekst). No-op zolang de gebruiker 'm uit heeft staan;
+        # de app-naam is op het Fn-loslaten-moment op de main thread opgevangen.
+        try:
+            history.record(text, app, words, seconds, took)
+        except Exception:
+            pass
+
+
+def _frontmost_app():
+    """De app die nú voorgrond is -- waar je dictaat in geplakt wordt. Wordt op het
+    Fn-loslaten-moment (main thread, in de tap-callback) gelezen: één goedkope
+    NSWorkspace-call, ruim binnen de 'callback keert meteen terug'-regel. Alleen voor
+    de opt-in historie; None als het niet lukt."""
+    try:
+        app = NSWorkspace.sharedWorkspace().frontmostApplication()
+        return app.localizedName() if app else None
+    except Exception:
+        return None
 
 
 def run_daemon():
@@ -324,7 +360,33 @@ def run_daemon():
         audio = rec.stop()
         if guard:
             guard.resume()
-        threading.Thread(target=handle, args=(audio,), daemon=True).start()
+        # App-naam nú opvangen (main thread): dit is het venster waar geplakt wordt.
+        # Alleen als historie aanstaat -- anders geen capture, geen werk.
+        app = _frontmost_app() if settings.get("history_enabled") else None
+        threading.Thread(target=handle, args=(audio, True, app), daemon=True).start()
+
+    def cancel():
+        # Esc tijdens opnemen: gooi het dictaat weg. Geen transcriptie, geen plakken,
+        # media weer aan. Anders dan end(): die stuurt het naar Whisper; deze niet.
+        nonlocal locked
+        if not rec.recording:
+            return
+        rec.stop()                 # frames worden weggegooid (return niet gebruikt)
+        if guard:
+            guard.resume()
+        locked = False
+        cue("cancel")
+        hud_state("idle")
+        print("  ⎋ afgebroken")
+
+    def on_key(event):
+        # Globale monitor: vuurt voor toetsen in de app waar je typt (wij zijn een
+        # menubalk-accessoire, dus nooit zelf de voorgrond). Alleen Esc, en alleen
+        # terwijl we opnemen. Passief: Esc gaat óók naar de app eronder, wat vrijwel
+        # nooit kwaad kan -- swallowen zou een actieve tap vragen en dat is het niet
+        # waard tegenover het risico voor de Fn-tap.
+        if event.keyCode() == KEY_ESC and rec.recording:
+            cancel()
 
     def on_event(proxy, type_, event, refcon):
         nonlocal locked, press_t, last_tap_t, fn_was_held
@@ -395,6 +457,18 @@ def run_daemon():
 
     print("samflow draait. Houd Fn ingedrukt, praat, laat los. Ctrl-C stopt.")
 
+    # Anonieme dagelijkse heartbeat (alleen tellen). Inert tot er een sink is
+    # ingesteld en zolang share_usage aanstaat; draait op een eigen thread.
+    telemetry.maybe_send()
+
+    # Opt-in historie: eenmalig prunen bij opstart (verwijdert wat over de retentie
+    # heen is). No-op als historie uit staat of retentie op 'altijd'.
+    if settings.get("history_enabled"):
+        try:
+            history.prune()
+        except Exception:
+            pass
+
     if not SHOW_HUD:
         CFRunLoopRun()
         return
@@ -403,6 +477,11 @@ def run_daemon():
     # so the pill and the Fn tap share one thread and never race.
     HUD = hud_module.Hud()
     HUD.build()
+    # Esc breekt een lopend dictaat af. Globale monitor op de main run loop; raakt
+    # de Fn-tap niet. De referentie moet blijven leven, anders ruimt macOS de
+    # monitor op -- vandaar het vasthouden in een lokale die leeft zolang HUD.run().
+    esc_monitor = NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(  # noqa: F841
+        NSEventMaskKeyDown, on_key)
     HUD.run()
 
 
@@ -523,7 +602,13 @@ def main():
                     help="vaak-gehoorde onbekende woorden afhandelen (de leer-loop)")
     ap.add_argument("--prefs", action="store_true", help="alleen het voorkeuren-venster tonen")
     ap.add_argument("--welcome", action="store_true", help="alleen de eerste-start-wizard tonen")
+    ap.add_argument("--window", action="store_true", help="alleen het hoofdvenster tonen")
     args = ap.parse_args()
+
+    if args.window:
+        import mainwindow
+        mainwindow._run_standalone()
+        return
 
     if args.prefs or args.welcome:
         import prefs
