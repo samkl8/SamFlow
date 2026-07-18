@@ -22,6 +22,7 @@ import lexicon
 # ---------- config ----------
 ENABLE_COMMANDS = True     # spoken "nieuwe regel" becomes an actual newline
 ENABLE_STUTTER = True      # collapse "naar naar" -> "naar"
+ENABLE_LISTS = True        # "ten eerste ... ten tweede ..." -> een genummerde lijst
 # ----------------------------
 
 
@@ -69,6 +70,14 @@ COMMANDS = {
 # Dutch doubles these legitimately ("het feit dat dat werkt"), so leave them alone.
 STUTTER_ALLOW = {"dat", "die", "heel", "had"}
 
+# Gesproken opsommingen: expliciete ordinaal-markers. Alleen bij >=2 markers zetten we om
+# naar een genummerde lijst, zodat een losse "ten eerste" in een zin blijft staan. "ten"
+# matcht alleen mét een ordinaal erachter, dus "ten opzichte"/"ten einde" blijven ongemoeid.
+LIST_MARKER = re.compile(
+    r"\b(?:ten\s+(?:eerste|tweede|derde|vierde|vijfde|zesde|zevende|achtste|negende|tiende)"
+    r"|punt\s+(?:een|één|twee|drie|vier|vijf|zes|zeven|acht|negen|tien|\d+))\b",
+    re.IGNORECASE)
+
 
 def whisper_prompt() -> str:
     """The initial_prompt handed to Whisper. A plain comma list conditions fine.
@@ -98,6 +107,31 @@ def _collapse_stutter(text: str) -> str:
         word = m.group(1)
         return m.group(0) if word.lower() in STUTTER_ALLOW else word
     return re.sub(r"\b(\w+)(?:\s+\1\b)+", repl, text, flags=re.IGNORECASE)
+
+
+def _format_lists(text: str) -> str:
+    """Gesproken opsommingen met >=2 ordinaal-markers ('ten eerste ... ten tweede ...',
+    'punt een ... punt twee ...') worden een genummerde lijst. De nummering telt zelf
+    door, dus een misgehoorde ordinaal maakt niet uit. Onder de twee markers raken we
+    niets aan -- een losse 'ten eerste' hoort gewoon in de zin. De tekst vóór de eerste
+    marker blijft als aanloop-regel boven de lijst staan."""
+    marks = list(LIST_MARKER.finditer(text))
+    if len(marks) < 2:
+        return text
+    lead = text[:marks[0].start()].strip()
+    items = []
+    for i, m in enumerate(marks):
+        end = marks[i + 1].start() if i + 1 < len(marks) else len(text)
+        item = text[m.end():end]
+        item = re.sub(r"^[\s,:;.\-]+", "", item)                            # leesteken vooraan weg
+        item = re.sub(r"^(?:en|dan|ook)\s+", "", item, flags=re.IGNORECASE)  # bindwoord vooraan weg
+        item = item.strip().rstrip(".").strip()
+        if item:
+            items.append(f"{len(items) + 1}. {item[0].upper()}{item[1:]}")
+    if len(items) < 2:
+        return text
+    block = "\n".join(items)
+    return f"{lead}\n{block}" if lead else block
 
 
 def _sentence_case(text: str) -> str:
@@ -133,6 +167,9 @@ def clean(text: str) -> str:
         for pattern, literal in COMMANDS.items():
             text = re.sub(pattern, literal, text, flags=re.IGNORECASE)
 
+    if ENABLE_LISTS:
+        text = _format_lists(text)
+
     # tidy the whitespace the substitutions left behind
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r" ([,.!?;:])", r"\1", text)
@@ -156,6 +193,9 @@ EXAMPLES = [
     "Ondertiteld door de Amara.org gemeenschap",
     "Www.Nil.Com.Br",
     "ga naar example.com en check versie 3.5. daarna pushen",
+    "er zijn drie redenen ten eerste snelheid ten tweede prijs ten derde gemak",  # opsomming -> genummerd
+    "punt een koffie punt twee thee punt drie water",                             # opsomming via 'punt'
+    "ten eerste moeten we dit echt afmaken vandaag",                              # GEEN lijst: één marker blijft zin
 ]
 
 
