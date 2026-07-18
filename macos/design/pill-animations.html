@@ -1,0 +1,350 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>SamFlow — pill-animaties</title>
+<style>
+  :root{
+    --sg:#f4f4f6; --ss:#ffffff; --si:#1b1b20; --sm:#5c5c66; --sf:#9a9aa4;
+    --sl:rgba(20,18,30,.10); --clay:#c67b52; --green:#33b859;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,monospace;
+
+    /* pill-motion — timing wordt door de "Soepel/Kwiek"-schakelaar overschreven */
+    --in-dur:.24s;  --in-ease:cubic-bezier(.34,1.42,.5,1);
+    --out-dur:.16s; --out-ease:cubic-bezier(.4,0,.9,.4);
+    --morph-dur:.14s;
+    --tick-dur:.5s;
+
+    --pill-shadow:0 10px 28px rgba(20,18,30,.24), 0 2px 6px rgba(20,18,30,.16),
+                  inset 0 0 0 .5px rgba(255,255,255,.12);
+  }
+  @media (prefers-color-scheme:dark){
+    :root{ --sg:#0e0e12; --ss:#17171c; --si:#f1f1f4; --sm:#9a9aa4; --sf:#63636d; --sl:rgba(255,255,255,.10); }
+  }
+  :root[data-theme="light"]{ --sg:#f4f4f6; --ss:#fff; --si:#1b1b20; --sm:#5c5c66; --sf:#9a9aa4; --sl:rgba(20,18,30,.10); }
+  :root[data-theme="dark"]{ --sg:#0e0e12; --ss:#17171c; --si:#f1f1f4; --sm:#9a9aa4; --sf:#63636d; --sl:rgba(255,255,255,.10); }
+
+  /* Kwiek: korter, strakker. Soepel (default) staat in :root. */
+  .kwiek{
+    --in-dur:.16s;  --in-ease:cubic-bezier(.3,1.5,.6,1);
+    --out-dur:.11s; --out-ease:cubic-bezier(.4,0,.9,.4);
+    --morph-dur:.1s;
+    --tick-dur:.38s;
+  }
+
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--sg); color:var(--si); font-family:var(--sans);
+    -webkit-font-smoothing:antialiased; line-height:1.55; }
+  .wrap{ max-width:880px; margin:0 auto; padding:44px 22px 80px; }
+  .eyebrow{ font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--clay); font-weight:700; margin:0 0 12px; }
+  h1{ font-size:clamp(26px,4.5vw,36px); letter-spacing:-.02em; margin:0 0 14px; line-height:1.08; text-wrap:balance; }
+  .intro{ font-size:15px; color:var(--sm); max-width:66ch; margin:0 0 8px; text-wrap:pretty; }
+  .intro b{ color:var(--si); font-weight:600; }
+
+  h2.sec{ font-size:13px; letter-spacing:.08em; text-transform:uppercase; color:var(--sf); font-weight:700;
+    margin:44px 0 4px; }
+  .lead{ font-size:14px; color:var(--sm); max-width:64ch; margin:0 0 18px; text-wrap:pretty; }
+  .lead b{ color:var(--si); }
+
+  /* controls */
+  .controls{ display:flex; gap:22px; flex-wrap:wrap; align-items:center; margin:6px 0 22px; }
+  .ctl{ display:flex; align-items:center; gap:9px; }
+  .ctl .lbl{ font-size:11.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--sf); font-weight:700; }
+  .seg{ display:inline-flex; background:var(--sl); border-radius:999px; padding:3px; gap:2px; }
+  .seg button{ font:inherit; font-size:12.5px; font-weight:600; color:var(--sm); border:0; background:transparent;
+    padding:5px 12px; border-radius:999px; cursor:pointer; letter-spacing:-.01em; transition:.15s; }
+  .seg button:hover{ color:var(--si); }
+  .seg button.on{ background:var(--ss); color:var(--si); box-shadow:0 1px 3px rgba(20,18,30,.14), 0 0 0 .5px var(--sl); }
+  .replay{ font:inherit; font-size:12.5px; font-weight:600; color:var(--clay); border:0; background:transparent;
+    cursor:pointer; padding:5px 4px; }
+  .replay:hover{ text-decoration:underline; }
+
+  /* stage = een stukje "app" met een tekstcursor voor de schaal */
+  .stages{ display:flex; gap:14px; }
+  .stage{ flex:1 1 0; height:120px; border-radius:14px; display:flex; align-items:center; justify-content:center;
+    position:relative; overflow:hidden; box-shadow:inset 0 0 0 .5px var(--sl); }
+  .stage.lite{ background:#eeeeec; } .stage.drk{ background:#1e1e22; }
+  .stage .cursor{ position:absolute; width:1.5px; height:30px; opacity:.4; left:34%;
+    animation:blink 1.1s steps(1) infinite; }
+  .stage.lite .cursor{ background:#1b1b20; } .stage.drk .cursor{ background:#f1f1f4; }
+  .stage .tag{ position:absolute; left:12px; top:10px; font-size:10.5px; letter-spacing:.08em; text-transform:uppercase;
+    font-weight:700; opacity:.42; }
+  .stage.lite .tag{ color:#1b1b20; } .stage.drk .tag{ color:#f1f1f4; }
+  @keyframes blink{ 0%,50%{opacity:.4} 51%,100%{opacity:0} }
+
+  /* ---------- de pill ---------- */
+  .pill{
+    position:absolute;
+    width:var(--w); height:var(--h); border-radius:calc(var(--h)/2);
+    background:rgba(30,30,34,.92);
+    box-shadow:var(--pill-shadow);
+    transform-origin:center bottom;
+    transition:transform var(--in-dur) var(--in-ease),
+               opacity var(--in-dur) var(--in-ease),
+               box-shadow .3s ease, background-color .3s ease;
+  }
+  /* zichtbaar */
+  .pill[data-phase]{ opacity:1; transform:translateY(0) scale(1); }
+  /* verborgen — hiervandaan speelt de entrance-spring */
+  .pill[data-phase="hidden"]{ opacity:0; transform:translateY(7px) scale(.82); }
+  /* de exit gebruikt eigen, kortere timing */
+  .pill.leaving{ transition:transform var(--out-dur) var(--out-ease), opacity var(--out-dur) var(--out-ease),
+                 box-shadow .3s ease, background-color .3s ease; }
+  /* groene flash op "klaar" */
+  .pill.flash{ background-color:rgba(26,38,30,.94);
+    box-shadow:var(--pill-shadow), 0 0 0 2px rgba(51,184,89,.55), 0 0 22px rgba(51,184,89,.32); }
+
+  /* de drie glyphs liggen op elkaar en cross-faden */
+  .glyph{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; gap:var(--gap);
+    opacity:0; transition:opacity var(--morph-dur) ease; }
+  .pill[data-phase="recording"] .bars{ opacity:1; }
+  .pill[data-phase="thinking"]  .dots{ opacity:1; }
+  .pill[data-phase="done"]      .tick{ opacity:1; }
+
+  .bars i{ width:var(--bw); height:var(--max); border-radius:calc(var(--bw)/2);
+    background:#f0f0f2; transform-origin:center; transform:scaleY(var(--floor)); }
+  .dots b{ width:var(--dot); height:var(--dot); border-radius:50%; background:#f0f0f2;
+    animation:pulse 1.05s ease-in-out infinite; }
+  .dots b:nth-child(2){ animation-delay:.14s; } .dots b:nth-child(3){ animation-delay:.28s; }
+  @keyframes pulse{ 0%,100%{ opacity:.28; transform:scale(.72); } 50%{ opacity:1; transform:scale(1); } }
+  .tick svg{ width:calc(var(--h) * .62); height:calc(var(--h) * .62); overflow:visible; }
+  .tick path{ fill:none; stroke:var(--green); stroke-width:2.4; stroke-linecap:round; stroke-linejoin:round; }
+
+  /* formaat-vergelijking */
+  .sizes{ display:flex; gap:14px; flex-wrap:wrap; }
+  .sizecard{ flex:1 1 220px; background:var(--ss); border:.5px solid var(--sl); border-radius:16px; padding:16px 18px 18px; }
+  .sizecard.pick{ box-shadow:0 0 0 1.5px var(--clay); }
+  .sizecard .chead{ display:flex; align-items:baseline; gap:9px; margin-bottom:14px; flex-wrap:wrap; }
+  .sizecard h3{ font-size:15.5px; margin:0; letter-spacing:-.01em; }
+  .sizecard .sz{ font-family:var(--mono); font-size:11px; color:var(--sf); }
+  .sizecard .badge{ margin-left:auto; font-size:10.5px; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+    color:var(--clay); background:color-mix(in srgb,var(--clay) 15%, transparent); padding:3px 9px; border-radius:999px; }
+  .sizecard .badge.old{ color:var(--sf); background:var(--sl); }
+  .sizecard .mini{ height:74px; border-radius:11px; display:flex; align-items:center; justify-content:center;
+    position:relative; background:#1e1e22; box-shadow:inset 0 0 0 .5px var(--sl); }
+  .sizecard .desc{ font-size:12.5px; color:var(--sm); margin:12px 0 0; }
+  .sizecard .desc b{ color:var(--si); }
+  /* in de formaat-kaartjes staat de pill vast zichtbaar in "recording" */
+  .mini .pill{ position:static; opacity:1; transform:none; }
+
+  .foot{ margin-top:40px; font-size:13.5px; color:var(--sm); text-wrap:pretty; max-width:70ch; }
+  .foot b{ color:var(--si); }
+  code{ font-family:var(--mono); font-size:.92em; background:var(--sl); padding:1px 5px; border-radius:5px; }
+
+  /* live fase-uitleg onder de hero */
+  .phases{ display:flex; gap:8px; margin:16px 0 0; flex-wrap:wrap; }
+  .phases span{ font-size:12px; font-weight:600; color:var(--sf); padding:5px 11px; border-radius:999px;
+    background:var(--sl); transition:.2s; }
+  .phases span.on{ color:#fff; background:var(--clay); box-shadow:0 2px 8px color-mix(in srgb,var(--clay) 45%,transparent); }
+
+  @media (prefers-reduced-motion:reduce){
+    .pill,.glyph{ transition:none !important; }
+    .dots b{ animation:none; opacity:1; }
+    .cursor{ animation:none; }
+  }
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">SamFlow · pill-animaties</p>
+  <h1>Hoe de pill zich beweegt</h1>
+  <p class="intro">Niet nieuwe visuals — <b>beweging op de overgangen die er al zijn</b>. De pill veert in beeld,
+    vervloeit tussen opnemen → transcriberen → klaar, en krimpt weg als 'ie klaar is. De <b>pill zelf blijft even
+    groot</b> (92×30); alleen de <b>staafjes binnenin worden forser</b> en veren nu vloeiend mee (render-side
+    smoothing) i.p.v. te springen. Alles op ware grootte, licht én donker; de knipperende streep is je tekstcursor,
+    voor de schaal.</p>
+
+  <!-- ============ HERO ============ -->
+  <h2 class="sec">De volledige levenscyclus — loopt</h2>
+  <p class="lead">Eén echt dictaat, keer op keer. Let op de <b>entrance-spring</b>, de <b>cross-fade</b> tussen de
+    fasen, en het <b>tekenende vinkje</b> met een korte groene flash op "klaar".</p>
+
+  <div class="controls">
+    <div class="ctl"><span class="lbl">Timing</span>
+      <span class="seg" id="seg-timing">
+        <button data-v="soepel" class="on">Soepel</button>
+        <button data-v="kwiek">Kwiek</button>
+      </span>
+    </div>
+    <div class="ctl"><span class="lbl">Balkjes</span>
+      <span class="seg" id="seg-bars">
+        <button data-v="huidig">Huidig</button>
+        <button data-v="ruimer" class="on">Ruimer</button>
+        <button data-v="fors">Fors</button>
+      </span>
+    </div>
+    <button class="replay" id="replay">↻ opnieuw</button>
+  </div>
+
+  <div class="stages" id="hero">
+    <div class="stage lite"><span class="tag">licht</span><span class="cursor"></span>
+      <div class="pill" data-phase="hidden">
+        <div class="glyph bars"><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="glyph dots"><b></b><b></b><b></b></div>
+        <div class="glyph tick"><svg viewBox="0 0 24 24"><path d="M4 12.6 L10 18.4 L20 6.4"/></svg></div>
+      </div>
+    </div>
+    <div class="stage drk"><span class="tag">donker</span><span class="cursor"></span>
+      <div class="pill" data-phase="hidden">
+        <div class="glyph bars"><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="glyph dots"><b></b><b></b><b></b></div>
+        <div class="glyph tick"><svg viewBox="0 0 24 24"><path d="M4 12.6 L10 18.4 L20 6.4"/></svg></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phases" id="phases">
+    <span data-ph="recording">Opnemen · echte mic</span>
+    <span data-ph="thinking">Transcriberen</span>
+    <span data-ph="done">Klaar</span>
+  </div>
+
+  <!-- ============ BALKJES ============ -->
+  <h2 class="sec">Hoe fors mogen de staafjes zijn?</h2>
+  <p class="lead"><b>Zelfde pill (92×30) in alle drie</b> — alleen de staafjes binnenin verschillen. Ze waren soms te
+    minimaal: dun én kort, dus bij zacht praten zag je ze amper. Hieronder breder én hoger, zodat ze meer van de
+    ruimte in de pill vullen. <b>Ruimer</b> is mijn voorstel; de ondergrens ligt hoger zodat zachte spraak óók
+    zichtbaar blijft.</p>
+
+  <div class="sizes" id="sizes">
+    <div class="sizecard">
+      <div class="chead"><h3>Huidig</h3><span class="sz">staaf 3,5 · hoog 15</span><span class="badge old">nu</span></div>
+      <div class="mini">
+        <div class="pill" data-phase="recording" data-size="huidig"><div class="glyph bars"><i></i><i></i><i></i><i></i><i></i></div></div>
+      </div>
+      <p class="desc">Wat er nu in <code>hud.py</code> staat: dunne staafjes die maar tot de helft van de pill komen.</p>
+    </div>
+    <div class="sizecard pick">
+      <div class="chead"><h3>Ruimer</h3><span class="sz">staaf 4,5 · hoog 20</span><span class="badge">voorstel</span></div>
+      <div class="mini">
+        <div class="pill" data-phase="recording" data-size="ruimer"><div class="glyph bars"><i></i><i></i><i></i><i></i><i></i></div></div>
+      </div>
+      <p class="desc"><b>Breder en hoger, meteen leesbaar</b> — vullen de pill netjes op. Zelfde pill, alleen niet meer turen.</p>
+    </div>
+    <div class="sizecard">
+      <div class="chead"><h3>Fors</h3><span class="sz">staaf 5,5 · hoog 22</span><span class="badge old">steviger</span></div>
+      <div class="mini">
+        <div class="pill" data-phase="recording" data-size="fors"><div class="glyph bars"><i></i><i></i><i></i><i></i><i></i></div></div>
+      </div>
+      <p class="desc">Als "Ruimer" nog te licht voelt. De staafjes vullen bijna de hele hoogte — stevig aanwezig.</p>
+    </div>
+  </div>
+
+  <p class="foot"><b>Kies een formaat en een timing-gevoel</b>, dan zet ik precies dát in <code>hud.py</code>:
+    de entrance/exit-spring, de cross-fade, het tekenende vinkje, de render-side smoothing van de balken, plus
+    een echte drop-shadow onder de pill. De balken blijven gevoed door de échte mic-RMS — smoothing is geen
+    verzonnen animatie, dus de diagnostische waarde ("beweegt alleen als de mic je hoort") blijft heel.</p>
+</div>
+
+<script>
+(() => {
+  const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Pill blijft altijd 92×30 — alleen de staafjes (bw/gap/min/max) veranderen.
+  const SIZES = {
+    huidig: { w:92, h:30, bw:3.5, gap:4.5, min:3,   max:15, dot:6,   floor:3/15 },
+    ruimer: { w:92, h:30, bw:4.5, gap:5.0, min:4,   max:20, dot:6.5, floor:4/20 },
+    fors:   { w:92, h:30, bw:5.5, gap:5.5, min:4.5, max:22, dot:7,   floor:4.5/22 },
+  };
+
+  function applySize(pill, key){
+    const s = SIZES[key];
+    pill.style.setProperty('--w',   s.w   + 'px');
+    pill.style.setProperty('--h',   s.h   + 'px');
+    pill.style.setProperty('--bw',  s.bw  + 'px');
+    pill.style.setProperty('--gap', s.gap + 'px');
+    pill.style.setProperty('--max', s.max + 'px');
+    pill.style.setProperty('--dot', s.dot + 'px');
+    pill.style.setProperty('--floor', s.floor.toFixed(3));
+    pill._cfg = s;
+  }
+
+  // ---- balk-motor: gesimuleerde spraak + render-side spring (per frame) ----
+  const engines = [];
+  function attachBars(pill){
+    const bars = [...pill.querySelectorAll('.bars i')];
+    const weights = [0.72, 0.9, 1.0, 0.86, 0.76];
+    const cur = bars.map(() => 0.25);
+    let loud = 0.4, setpt = 0.5, acc = 0, last = 0;
+    engines.push((t) => {
+      const s = pill._cfg;
+      const floor = s.min / s.max;
+      const dt = last ? Math.min((t - last) / 1000, 0.05) : 0; last = t;
+      acc += dt;
+      if (acc > 0.11){ acc = 0; setpt = Math.random() < 0.16 ? 0.06 : 0.32 + Math.random() * 0.62; }
+      loud += (setpt - loud) * Math.min(1, dt * 6);
+      const ts = t / 1000;
+      bars.forEach((b, i) => {
+        const wob = 0.72 + 0.28 * Math.sin(ts * 5 + i * 1.15);
+        const tgt = Math.max(0, Math.min(1, loud * weights[i] * wob));
+        cur[i] += (tgt - cur[i]) * Math.min(1, dt * 14);           // spring naar doelhoogte
+        const ratio = floor + (1 - floor) * cur[i];
+        b.style.transform = 'scaleY(' + ratio.toFixed(3) + ')';
+      });
+    });
+  }
+  if (!REDUCED) requestAnimationFrame(function loop(t){ for (const f of engines) f(t); requestAnimationFrame(loop); });
+
+  // ---- vinkje dat zichzelf tekent + groene flash ----
+  function drawTick(pill){
+    const path = pill.querySelector('.tick path');
+    if (path){
+      const len = path.getTotalLength();
+      path.style.strokeDasharray = len;
+      path.style.transition = 'none';
+      path.style.strokeDashoffset = len;
+      void path.getBoundingClientRect();                            // reflow -> herstart de animatie
+      path.style.transition = 'stroke-dashoffset var(--tick-dur) cubic-bezier(.2,.85,.25,1)';
+      path.style.strokeDashoffset = '0';
+    }
+    pill.classList.add('flash');
+    setTimeout(() => pill.classList.remove('flash'), 620);
+  }
+
+  // ---- levenscyclus voor de hero-pillen ----
+  const SEQ = [
+    ['recording', 1900],   // verschijnt met de entrance-spring
+    ['thinking',  1250],
+    ['done',      1150],
+    ['hidden',     720],   // krimpt weg
+  ];
+  function lifecycle(pill, onPhase){
+    let i = 0, timer = null;
+    function step(){
+      const [ph, dur] = SEQ[i];
+      pill.classList.toggle('leaving', ph === 'hidden');
+      pill.dataset.phase = ph;
+      if (ph === 'done') drawTick(pill);
+      onPhase && onPhase(ph);
+      i = (i + 1) % SEQ.length;
+      timer = setTimeout(step, dur);
+    }
+    step();
+    return { restart(){ clearTimeout(timer); i = 0; pill.dataset.phase = 'hidden'; pill.classList.remove('leaving');
+                        setTimeout(step, 260); } };
+  }
+
+  // ---- opbouw hero ----
+  const heroPills = [...document.querySelectorAll('#hero .pill')];
+  const phaseEls = [...document.querySelectorAll('#phases span')];
+  function paintPhase(ph){
+    phaseEls.forEach(el => el.classList.toggle('on', el.dataset.ph === ph));
+  }
+  heroPills.forEach(p => { applySize(p, 'ruimer'); attachBars(p); });
+  const controllers = heroPills.map((p, idx) => lifecycle(p, idx === 0 ? paintPhase : null));
+
+  // ---- formaat-kaartjes: vast in "recording" ----
+  document.querySelectorAll('#sizes .pill').forEach(p => { applySize(p, p.dataset.size); attachBars(p); });
+
+  // ---- schakelaars ----
+  function wireSeg(id, fn){
+    const seg = document.getElementById(id);
+    seg.addEventListener('click', e => {
+      const btn = e.target.closest('button'); if (!btn) return;
+      seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === btn));
+      fn(btn.dataset.v);
+    });
+  }
+  wireSeg('seg-timing', v => document.documentElement.classList.toggle('kwiek', v === 'kwiek'));
+  wireSeg('seg-bars', v => { heroPills.forEach(p => applySize(p, v)); });
+  document.getElementById('replay').addEventListener('click', () => controllers.forEach(c => c.restart()));
+})();
+</script>
