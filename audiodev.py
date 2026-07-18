@@ -49,6 +49,7 @@ def _fourcc(code: str) -> int:
 _GLOBAL = _fourcc("glob")
 _INPUT = _fourcc("inpt")
 _DEVICE_LIST = _fourcc("dev#")       # kAudioHardwarePropertyDevices
+_DEFAULT_INPUT = _fourcc("dIn ")     # kAudioHardwarePropertyDefaultInputDevice
 _STREAMS = _fourcc("stm#")           # kAudioDevicePropertyStreams
 _TRANSPORT = _fourcc("tran")         # kAudioDevicePropertyTransportType
 _NAME = _fourcc("lnam")              # kAudioObjectPropertyName
@@ -101,6 +102,27 @@ def _has_input(obj: int) -> bool:
     return size.value > 0
 
 
+def refresh():
+    """
+    Her-initialiseer PortAudio zodat de apparaatlijst de HUIDIGE hardware weerspiegelt.
+
+    PortAudio (V19 op CoreAudio) enumereert apparaten eenmalig bij Pa_Initialize() en
+    ziet hotplug daarna NIET meer. De app draait dagen achter elkaar; koppel je je AirPods
+    los, dan blijft sounddevice ze tonen en blijft sd.default.device naar dat verdwenen
+    apparaat wijzen. choose_input() baseert zich dan op die dode topologie: de stale default
+    ('AirPods') staat niet meer in de live CoreAudio-transports, glipt langs de Bluetooth-
+    check en wordt als 'gewone default' teruggegeven -> sd.InputStream(device=None) opent het
+    verdwenen apparaat -> fout of stilte. Dát is 'de mic schakelt niet mee'. transports()
+    zelf is wél live (rechtstreeks CoreAudio); alleen de sounddevice-helft bevriest.
+
+    Deze re-init (gemeten ~3 ms) maakt query_devices()/default weer live. ALLEEN aanroepen
+    als er geen stream open staat: _terminate() sluit PortAudio's interne staat af, en dat
+    mag niet onder een lopende stream.
+    """
+    sd._terminate()
+    sd._initialize()
+
+
 def transports() -> dict:
     """{apparaatnaam: transport-string} voor elk apparaat met een input-stream."""
     result = {}
@@ -111,6 +133,32 @@ def transports() -> dict:
         if name:
             result[name] = _TRANSPORTS.get(_uint32(device, _TRANSPORT), "?")
     return result
+
+
+def effective_input_name():
+    """
+    De naam van de mic waarvan we NU zouden opnemen, live uit CoreAudio -- geen sounddevice,
+    dus altijd actueel én veilig aan te roepen terwijl er een opname-stream open staat (in
+    tegenstelling tot choose_input(), dat op de bevroren PortAudio-lijst leunt). Puur voor het
+    label in de UI; het echte openen loopt via _open() -> refresh() + choose_input().
+
+    Spiegelt het beleid van choose_input: de systeem-default-mic, tenzij die Bluetooth is ->
+    dan de ingebouwde mic (we nemen nooit op van een Bluetooth-mic; zie de module-docstring).
+    """
+    default_dev = _uint32(1, _DEFAULT_INPUT)
+    default_name, builtin = None, None
+    for device in _uint32_array(1, _DEVICE_LIST):
+        if not _has_input(device):
+            continue
+        name = _name(device)
+        transport = _TRANSPORTS.get(_uint32(device, _TRANSPORT), "?")
+        if device == default_dev:
+            default_name = name
+            if transport != "Bluetooth":
+                return name          # gewone default -> die gebruiken we ook
+        if transport == "ingebouwd" and builtin is None:
+            builtin = name
+    return builtin or default_name   # default is Bluetooth/onbekend -> ingebouwd
 
 
 def choose_input(prefer=MIC_DEVICE):
