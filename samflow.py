@@ -201,6 +201,12 @@ class Recorder:
         # Kies de mic elke keer opnieuw: koppel je AirPods los, dan wisselt de
         # keuze mee. Opnemen van een Bluetooth-mic zou je muziek naar telefoon-
         # kwaliteit trekken, dus 'auto' mijdt die - zie audiodev.py.
+        # Maar: PortAudio bevriest de apparaatlijst bij proces-start en ziet hotplug
+        # niet. Zonder een re-init blijft die "opnieuw kiezen" op de OUDE topologie
+        # hangen -- AirPods eruit -> sounddevice toont ze nog -> we openen het verdwenen
+        # apparaat -> stilte. audiodev.refresh() maakt de lijst live (zie de docstring
+        # daar). Veilig hier: we bereiken dit alleen als self.stream None is (hierboven),
+        # dus er staat geen stream open die de re-init zou raken.
         # Bouw de stream in een lokale var en hang 'm pas ná start() aan self: zo
         # blijft er nooit een half-geopende stream achter waardoor _open zichzelf
         # zou overslaan. En vang CoreAudio-fouten hier af -- een AUHAL-hik na een
@@ -209,6 +215,7 @@ class Recorder:
         # dan neemt dit dictaat niets op (de energie-poort verwerpt de stilte netjes)
         # en probeert de volgende Fn-druk opnieuw.
         try:
+            audiodev.refresh()
             device, name, _ = audiodev.choose_input()
             stream = sd.InputStream(samplerate=SAMPLE_RATE, channels=1,
                                     dtype="int16", blocksize=BLOCK,
