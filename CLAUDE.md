@@ -1,4 +1,4 @@
-# Project: samflow — lokale dictatie (Wispr Flow-kloon)
+# Project: samflow — lokale dictatie-app
 
 ## Wat dit project doet
 Fn ingedrukt houden neemt op, loslaten transcribeert lokaal en plakt de tekst in het actieve
@@ -75,6 +75,15 @@ Dit is de onderhoudslus van het project. Hoor je een woord dat er verkeerd uitko
   een lange opname zou anders als stilte worden weggegooid.
 - Blokkeer de CFRunLoop nooit. De Fn-callback moet meteen terugkeren; transcriberen gebeurt
   in een aparte thread. Doe je dat niet, dan mist de tap toetsaanslagen.
+- **Houd `Recorder.lock` nooit vast over een CoreAudio-call heen.** `stream.stop()/close()`
+  (en `.start()`) kunnen bij een apparaatwissel op de HAL-mutex blokkeren (AUHAL `err=-10851`).
+  Deed `_close()` dat vroeger mét de lock, dan blokkeerde de Fn-callback (main thread) op diezelfde
+  lock → de héle app bevroor (bewezen met een stack-sample: `AudioOutputUnitStop` → `HALB_Mutex::Lock`).
+  Daarom: ref eruit swappen ónder de lock, stop/close erbuiten. De lock beschermt alleen de
+  Python-staat (frames/preroll/stream-ref), nooit een blokkerende C-call.
+- **Een audio-fout mag de Fn-callback nooit als exceptie bereiken.** `_open()` vangt CoreAudio-
+  fouten af (mislukt openen = dit dictaat neemt niets op, volgende Fn-druk probeert opnieuw);
+  een geraiseerde fout in de listen-only event-tap zou 'm stilleggen.
 - Concludeer nooit uit "de stream opende" dat de mic werkt. Een geweigerde microfoon levert
   op macOS nullen op, geen fout. Vraag AVFoundation.
 
@@ -84,7 +93,9 @@ Dit is de onderhoudslus van het project. Hoor je een woord dat er verkeerd uitko
   `makeKeyAndOrderFront_`: dan gaat de `Cmd+V` die erop volgt naar de pill in plaats van naar
   de editor waar je in stond.
 - **Alle AppKit-calls op de main thread.** Achtergrondthreads schrijven alleen naar
-  `Hud.state` / `Hud.level`; een 30 fps `NSTimer` op de main thread leest die en tekent.
+  `Hud.state` / `Hud.level`; een 60 fps `NSTimer` op de main thread leest die en tekent
+  (60 i.p.v. 30 sinds de entrance/exit-springs — een soepele veer wil meer frames; de
+  mini-view is spotgoedkoop om te tekenen).
 - `NSApp.run()` draait dezelfde main run loop waar de event tap aan hangt. Vervang dat niet
   door een eigen loop naast `CFRunLoopRun()` — dan mist de Fn-tap events.
 - De balken worden gevoed door de échte mic-RMS. Vervang dat niet door een animatie: het feit

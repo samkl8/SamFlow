@@ -28,5 +28,9 @@
     <!-- Shown by macOS in the microphone permission dialog. -->
     <key>NSMicrophoneUsageDescription</key>
     <string>SamFlow transcribes your speech locally while you hold the Fn key.</string>
+
+    <!-- Shown by Finder (Get Info) and in an About panel. -->
+    <key>NSHumanReadableCopyright</key>
+    <string>© 2026 Kloeth Digital B.V.</string>
 </dict>
 </plist>

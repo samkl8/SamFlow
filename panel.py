@@ -8,6 +8,15 @@ volledige controle over -- status, snelle toggles, laatste dictaat, en (als 'ie
 klaarstaat) een update-knop, in SamFlow's eigen stijl. De iconen zijn SF Symbols
 (Apple's vector-set, template zodat ze de tekstkleur aannemen), geen emoji.
 
+Alle kleuren komen uit `theme.py` (de Helder-tokens) en de bouwstenen uit `ui.py`
+(fill/label/glabel/hline/GlyphView), zodat het paneel exact dezelfde taal spreekt
+als het hoofdvenster: één grafiet/klei/groen-palet, licht én donker adaptief, geen
+losse systeemgrijzen meer. De content-view is een egaal Helder-oppervlak
+(`theme.WINDOW`) i.p.v. het doorschijnende systeemmateriaal -- gelijk aan de mockup
+(macos/design/menubar-panel-mockup.html). De status leeft in een gekleurde pil
+rechtsboven (groen = klaar/geplakt, klei = luistert/transcribeert), net als de
+status-chips op het dashboard.
+
 Het paneel wordt bij élke opening opnieuw opgebouwd (_rebuild): zo weerspiegelt
 het altijd de actuele status, laatste dictaat, toggle-standen en update-stand
 zonder een aparte verver-route. Dat kost niets -- het opent maar af en toe.
@@ -21,58 +30,44 @@ Alle AppKit-calls op de main thread (de popover opent door een klik).
 import objc
 from AppKit import (
     NSApplication,
-    NSBezierPath, NSBox, NSBoxSeparator, NSButton, NSColor, NSFont,
+    NSButton, NSColor, NSFont,
     NSFontWeightRegular, NSImage, NSImageLeft,
     NSImageSymbolConfiguration, NSMakeRect, NSMinYEdge, NSPopover,
     NSPopoverBehaviorTransient, NSControlStateValueOff, NSControlStateValueOn,
-    NSTextAlignmentLeft, NSTextField, NSView, NSViewController,
+    NSTextAlignmentLeft, NSTextField, NSViewController,
 )
 from Foundation import NSObject
-from Quartz import CGColorCreateGenericRGB
 
+import appmode
 import settings
+import theme
 import ui
 import updater
 
 W = 300
 PAD = 16
+HEAD_H = 60          # hoogte van de klei-getinte kopband (glyph + naam + status-pil)
 
-# Status -> (kleur, tekst). Lokaal gehouden i.p.v. uit hud geïmporteerd: hud
-# importeert deze module, dus andersom zou een cyclus geven.
+# Merk-accenten als tuples voor _rgb (translucent tints trekken we hier zelf, i.p.v.
+# uit de adaptieve theme-NSColors -- klei en groen zijn constant in licht/donker).
+# Lokaal gehouden i.p.v. uit hud geïmporteerd: hud importeert deze module, dus
+# andersom zou een cyclus geven.
 _CLAY = (0.776, 0.482, 0.322)          # #C67B52 — merk-accent (Helder)
-_GREEN = (0.20, 0.72, 0.35)            # semantisch groen: "klaar" + "update binnengehaald"
-_STATE_RGB = {
-    "idle": _GREEN,                    # groene "ready"-stip: klaar om te dicteren
-    "recording": _CLAY,
-    "thinking": _CLAY,
-    "done": _CLAY,
-}
-_STATE_LABEL = {
-    "idle": "klaar — houd Fn ingedrukt",
-    "recording": "aan het luisteren…",
-    "thinking": "transcriberen…",
-    "done": "geplakt ✓",
-}
+_GREEN = (0.20, 0.72, 0.35)            # #33B859 — "klaar/geplakt" + "update binnengehaald"
 _ACCENT = _CLAY
+
+# Status -> (korte pil-tekst, kleur). Groen voor de "goede" rusttoestanden
+# (klaar/geplakt), klei terwijl SamFlow werkt (luistert/transcribeert).
+_PILL = {
+    "idle":      ("klaar", _GREEN),
+    "recording": ("luistert", _CLAY),
+    "thinking":  ("transcribeert", _CLAY),
+    "done":      ("geplakt", _GREEN),
+}
 
 
 def _rgb(t, a=1.0):
     return NSColor.colorWithCalibratedRed_green_blue_alpha_(t[0], t[1], t[2], a)
-
-
-def _cg(t, a=1.0):
-    """Een CGColor voor layer-achtergronden. Via Quartz i.p.v. NSColor.CGColor(),
-    dat een ObjCPointerWarning geeft bij elke aanroep."""
-    return CGColorCreateGenericRGB(t[0], t[1], t[2], a)
-
-
-def _label(text, size=13, weight="regular", color=None):
-    f = NSTextField.labelWithString_(text)
-    f.setFont_(NSFont.boldSystemFontOfSize_(size) if weight == "bold"
-               else NSFont.systemFontOfSize_(size))
-    if color is not None:
-        f.setTextColor_(color)
-    return f
 
 
 def _symbol(name, size=14):
@@ -99,31 +94,6 @@ def _framed(view, frame):
     return view
 
 
-class _GlyphView(NSView):
-    """Het app-merkje: lichte equalizer-balkjes op een donker afgerond vierkant --
-    zelfde grafiet+wit als het app-icoon. Statisch (de status leeft in de stip
-    ernaast), puur identiteit."""
-    def drawRect_(self, _rect):
-        b = self.bounds()
-        NSColor.colorWithCalibratedWhite_alpha_(0.09, 1.0).set()
-        NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(b, 9, 9).fill()
-        _rgb((0.94, 0.94, 0.95)).set()      # off-white, gelijk aan het app-icoon
-        heights = [0.42, 0.72, 1.00, 0.60]
-        bw, gap = 3.0, 2.6
-        total = len(heights) * bw + (len(heights) - 1) * gap
-        x = (b.size.width - total) / 2
-        for hh in heights:
-            bh = 5.0 + (b.size.height - 15.0) * hh
-            NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
-                NSMakeRect(x, (b.size.height - bh) / 2, bw, bh), bw / 2, bw / 2).fill()
-            x += bw + gap
-
-
-class _PanelFlipped(NSView):
-    def isFlipped(self):
-        return True
-
-
 class MenuPanel(NSObject):
     def initWithHud_ticker_(self, hud, ticker):
         self = objc.super(MenuPanel, self).init()
@@ -147,22 +117,34 @@ class MenuPanel(NSObject):
 
     # --- bouwstenen ---
     @objc.python_method
-    def _sunken(self, frame):
-        v = _PanelFlipped.alloc().initWithFrame_(frame)
-        v.setWantsLayer_(True)
-        v.layer().setCornerRadius_(9)
-        v.layer().setBackgroundColor_(_cg((0.5, 0.5, 0.5), 0.10))
-        return v
+    def _status_pill(self, root, state):
+        """De status-pil rechtsboven in de kopband (mockup .p-status): gekleurde stip
+        + korte tekst op een licht getinte pil. Geeft de linker-x terug zodat de
+        vaste hint-subtitel ernaast wordt afgekapt en nooit overlapt."""
+        text, col = _PILL.get(state, _PILL["idle"])
+        lbl = ui.label(text, 11.5, "medium", color=_rgb(col))
+        lbl.sizeToFit()
+        tw = lbl.frame().size.width
+        w = 20 + tw + 10
+        x = W - PAD - w
+        pill = ui.fill(NSMakeRect(x, 22, w, 20), _rgb(col, 0.13), 10)
+        d = ui.label("●", 7, color=_rgb(col))
+        d.setFrame_(NSMakeRect(9, 5, 8, 11))
+        pill.addSubview_(d)
+        lbl.setFrame_(NSMakeRect(20, 2, tw, 15))
+        pill.addSubview_(lbl)
+        root.addSubview_(pill)
+        return x
 
     @objc.python_method
     def _separator(self, root, y):
-        box = NSBox.alloc().initWithFrame_(NSMakeRect(PAD, y, W - 2 * PAD, 1))
-        box.setBoxType_(NSBoxSeparator)
-        root.addSubview_(box)
+        # Haarlijn over de volle breedte (theme.LINE) -- gelijk aan de scheidingen in
+        # het hoofdvenster; de content houdt zelf zijn PAD-inspringing.
+        root.addSubview_(ui.hline(0, y, W))
 
     @objc.python_method
     def _switch_row(self, root, y, label, key):
-        root.addSubview_(_framed(_label(label, 13), NSMakeRect(PAD, y + 8, W - 90, 20)))
+        root.addSubview_(_framed(ui.label(label, 13), NSMakeRect(PAD, y + 8, W - 90, 20)))
         sw = ui.Toggle.alloc().init()
         sw.setFrame_(NSMakeRect(W - PAD - 38, y + 6, 38, 22))
         sw.setState_(NSControlStateValueOn if settings.get(key) else NSControlStateValueOff)
@@ -182,6 +164,7 @@ class MenuPanel(NSObject):
         btn.setBordered_(False)
         btn.setAlignment_(NSTextAlignmentLeft)
         btn.setFont_(NSFont.systemFontOfSize_(13))
+        btn.setContentTintColor_(theme.TEXT)   # inkt-kleur i.p.v. systeem-labelColor
         btn.setFrame_(NSMakeRect(PAD - 4, y, W - 2 * (PAD - 4), 28))
         root.addSubview_(btn)
 
@@ -201,25 +184,22 @@ class MenuPanel(NSObject):
     @objc.python_method
     def _make_view(self):
         self._switches = []
-        state, _ = self._hud.snapshot()
+        state = self._hud.current_state()
         last = self._hud.last_text()
         u = self._hud.update_state()
-        root = _PanelFlipped.alloc().initWithFrame_(NSMakeRect(0, 0, W, 640))
-        y = 14
+        root = ui.fill(NSMakeRect(0, 0, W, 700), theme.WINDOW, 0)  # egaal Helder-oppervlak
 
-        # kop: glyph + naam + status
-        root.addSubview_(_GlyphView.alloc().initWithFrame_(NSMakeRect(PAD, y, 34, 34)))
-        root.addSubview_(_framed(_label("SamFlow", 14, "bold"),
-                                 NSMakeRect(PAD + 44, y, W - PAD - 44, 18)))
-        dot = _PanelFlipped.alloc().initWithFrame_(NSMakeRect(PAD + 44, y + 22, 8, 8))
-        dot.setWantsLayer_(True)
-        dot.layer().setCornerRadius_(4)
-        dot.layer().setBackgroundColor_(_cg(_STATE_RGB[state]))
-        root.addSubview_(dot)
+        # kop: subtiele klei-getinte band met glyph, naam, vaste hint + status-pil
+        root.addSubview_(ui.fill(NSMakeRect(0, 0, W, HEAD_H), _rgb(_CLAY, 0.06), 0))
+        root.addSubview_(ui.GlyphView.alloc().initWithFrame_(NSMakeRect(PAD, 15, 34, 34)))
+        root.addSubview_(_framed(ui.label("SamFlow", 14, "bold"),
+                                 NSMakeRect(PAD + 45, 16, 130, 18)))
+        pill_x = self._status_pill(root, state)
+        sub_w = max(60, pill_x - 8 - (PAD + 45))
         root.addSubview_(_framed(
-            _label(_STATE_LABEL[state], 11.5, color=NSColor.secondaryLabelColor()),
-            NSMakeRect(PAD + 58, y + 20, W - PAD - 58, 15)))
-        y += 34 + 12
+            ui.label("Houd Fn ingedrukt om te dicteren", 11.5, color=theme.TEXT2),
+            NSMakeRect(PAD + 45, 35, sub_w, 15)))
+        y = HEAD_H
         self._separator(root, y)
         y += 11
 
@@ -234,32 +214,28 @@ class MenuPanel(NSObject):
             y += 38
         elif u.get("available"):
             root.addSubview_(_framed(
-                _label("Update beschikbaar op GitHub (git pull)", 12,
-                       color=NSColor.secondaryLabelColor()),
+                ui.label("Update beschikbaar op GitHub (git pull)", 12, color=theme.TEXT2),
                 NSMakeRect(PAD, y, W - 2 * PAD, 18)))
             y += 26
 
         # laatste dictaat
-        root.addSubview_(_framed(
-            _label("LAATSTE DICTAAT", 10.5, color=NSColor.tertiaryLabelColor()),
-            NSMakeRect(PAD, y, W - 2 * PAD, 14)))
-        y += 20
-        card = self._sunken(NSMakeRect(PAD, y, W - 2 * PAD, 56))
+        y = ui.glabel(root, PAD, y, W - 2 * PAD, "Laatste dictaat")
+        card = ui.fill(NSMakeRect(PAD, y, W - 2 * PAD, 56), theme.SUNKEN, 9)
         lbl = NSTextField.wrappingLabelWithString_("")
         lbl.setFont_(NSFont.systemFontOfSize_(12.5))
         lbl.setFrame_(NSMakeRect(11, 8, W - 2 * PAD - 22 - 62, 40))
         if last:
             shown = last if len(last) <= 140 else last[:139] + "…"
             lbl.setStringValue_(f"“{shown}”")
-            lbl.setTextColor_(NSColor.labelColor())
+            lbl.setTextColor_(theme.TEXT)
         else:
             lbl.setStringValue_("Nog niets gedicteerd")
-            lbl.setTextColor_(NSColor.tertiaryLabelColor())
+            lbl.setTextColor_(theme.FAINT)
         card.addSubview_(lbl)
         copy = NSButton.buttonWithTitle_target_action_("Kopiëren", self._ticker, "copyLastText:")
         copy.setBordered_(False)
         copy.setFont_(NSFont.systemFontOfSize_(11.5))
-        copy.setContentTintColor_(NSColor.secondaryLabelColor())
+        copy.setContentTintColor_(_rgb(_CLAY))
         copy.setEnabled_(bool(last))
         copy.setFrame_(NSMakeRect(W - 2 * PAD - 66, 14, 60, 22))
         card.addSubview_(copy)
@@ -281,6 +257,8 @@ class MenuPanel(NSObject):
         y += 8
 
         # acties
+        self._action_row(root, y, "Open SamFlow…", "macwindow", "openMainWindow:")
+        y += 30
         self._action_row(root, y, "Voorkeuren…", "slider.horizontal.3", "openPreferences:")
         y += 30
         self._action_row(root, y, "Woordenlijst bewerken…", "book", "editLexicon:")
@@ -295,10 +273,10 @@ class MenuPanel(NSObject):
         self._separator(root, y)
         y += 8
 
-        # voet
+        # voet -- versie + actieve modus (Basic / App-modus)
         root.addSubview_(_framed(
-            _label(f"SamFlow · {self._version}", 11.5, color=NSColor.tertiaryLabelColor()),
-            NSMakeRect(PAD, y + 5, 170, 15)))
+            ui.label(f"SamFlow · {self._version} · {appmode.label()}", 11.5, color=theme.FAINT),
+            NSMakeRect(PAD, y + 5, 200, 15)))
         stop = NSButton.buttonWithTitle_target_action_("Stop", self._ticker, "quit:")
         stop.setFont_(NSFont.systemFontOfSize_(12))
         stop.setBezelStyle_(1)

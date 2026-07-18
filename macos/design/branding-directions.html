@@ -1,0 +1,667 @@
+<title>SamFlow — vijf brand-richtingen</title>
+<style>
+  /* ============ deck-schil (thema-bewust) ============ */
+  :root{
+    --sg:#f4f4f8; --ss:#ffffff; --si:#16161c; --sm:#5b5b67; --sf:#9a9aa6;
+    --sl:rgba(20,18,44,.09); --sl2:rgba(20,18,44,.16); --sacc:#373af1;
+    --wrap:1080px;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --serif:"New York",ui-serif,Georgia,"Times New Roman",serif;
+    --avenir:"Avenir Next","Avenir",var(--sans);
+  }
+  @media (prefers-color-scheme:dark){
+    :root{ --sg:#0d0d11; --ss:#16161c; --si:#f1f1f6; --sm:#9a9aa6; --sf:#63636d;
+      --sl:rgba(255,255,255,.09); --sl2:rgba(255,255,255,.17); --sacc:#8688ff; }
+  }
+  :root[data-theme="light"]{ --sg:#f4f4f8; --ss:#ffffff; --si:#16161c; --sm:#5b5b67; --sf:#9a9aa6;
+    --sl:rgba(20,18,44,.09); --sl2:rgba(20,18,44,.16); --sacc:#373af1; }
+  :root[data-theme="dark"]{ --sg:#0d0d11; --ss:#16161c; --si:#f1f1f6; --sm:#9a9aa6; --sf:#63636d;
+    --sl:rgba(255,255,255,.09); --sl2:rgba(255,255,255,.17); --sacc:#8688ff; }
+
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--sg); color:var(--si); font-family:var(--sans);
+    -webkit-font-smoothing:antialiased; line-height:1.55; }
+  .wrap{ max-width:var(--wrap); margin:0 auto; padding:0 22px; }
+  a{ color:inherit; }
+
+  /* ---- sticky index ---- */
+  .bar{ position:sticky; top:0; z-index:20; background:color-mix(in srgb,var(--sg) 82%, transparent);
+    backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); border-bottom:.5px solid var(--sl); }
+  .bar .wrap{ display:flex; align-items:center; gap:14px; height:52px; }
+  .brand{ display:inline-flex; align-items:center; gap:9px; font-weight:700; letter-spacing:-.02em; font-size:15px; }
+  .brand .eq{ color:var(--sacc); }
+  .idx{ margin-left:auto; display:flex; gap:2px; flex-wrap:wrap; }
+  .idx a{ font-size:12px; text-decoration:none; color:var(--sm); padding:5px 9px; border-radius:7px; font-weight:600;
+    letter-spacing:.01em; white-space:nowrap; }
+  .idx a:hover{ color:var(--si); background:var(--sl); }
+  .idx a b{ color:var(--sacc); font-variant-numeric:tabular-nums; }
+  @media (max-width:720px){ .idx a span{ display:none; } }
+
+  /* ---- intro ---- */
+  header.lede{ padding:58px 0 30px; }
+  .eyebrow{ font-size:12px; letter-spacing:.16em; text-transform:uppercase; color:var(--sacc); font-weight:700; margin:0 0 14px; }
+  h1{ font-size:clamp(30px,5.4vw,48px); line-height:1.04; letter-spacing:-.028em; margin:0 0 18px; text-wrap:balance; font-weight:760; max-width:16ch; }
+  .lede p{ font-size:16px; color:var(--sm); margin:0 0 14px; max-width:64ch; text-wrap:pretty; }
+  .lede p strong{ color:var(--si); font-weight:600; }
+
+  /* ---- vertrekpunt (huidig) ---- */
+  .now{ margin:14px 0 8px; display:grid; grid-template-columns:auto 1fr; gap:22px; align-items:center;
+    background:var(--ss); border:.5px solid var(--sl); border-radius:16px; padding:20px 22px; }
+  @media (max-width:620px){ .now{ grid-template-columns:1fr; } }
+  .now .nowmark{ display:flex; align-items:center; gap:14px; }
+  .now .tile{ width:52px; height:52px; border-radius:13px; background:linear-gradient(160deg,#2a2a2e,#131315);
+    display:grid; place-items:center; box-shadow:inset 0 0 0 .5px rgba(255,255,255,.08); }
+  .now .wm{ font-weight:700; letter-spacing:-.02em; font-size:20px; }
+  .now .txt{ font-size:14px; color:var(--sm); }
+  .now .txt b{ color:var(--si); font-weight:650; }
+  .now .chip{ display:inline-block; font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+    color:#E5463C; background:rgba(229,70,60,.12); padding:3px 9px; border-radius:999px; margin-right:6px; }
+
+  /* ---- equalizer mark (herbruikbaar) ---- */
+  .eq{ display:inline-flex; align-items:flex-end; gap:2.5px; height:1em; }
+  .eq i{ width:.18em; min-width:2.4px; border-radius:2px; background:currentColor; display:block; transform-origin:bottom; }
+  .eq i:nth-child(1){ height:42%; } .eq i:nth-child(2){ height:74%; }
+  .eq i:nth-child(3){ height:100%; } .eq i:nth-child(4){ height:58%; } .eq i:nth-child(5){ height:82%; }
+  .live i{ animation:eq 1.05s ease-in-out infinite; }
+  .live i:nth-child(2){ animation-delay:.12s; } .live i:nth-child(3){ animation-delay:.26s; }
+  .live i:nth-child(4){ animation-delay:.05s; } .live i:nth-child(5){ animation-delay:.19s; }
+  @keyframes eq{ 0%,100%{ transform:scaleY(.34); } 50%{ transform:scaleY(1); } }
+
+  /* ============ richting-kaart (algemeen) ============ */
+  .dir{ margin:26px 0; border-radius:22px; overflow:hidden; scroll-margin-top:64px;
+    box-shadow:0 1px 0 var(--sl), 0 30px 60px -50px rgba(0,0,0,.5); }
+  .dir-in{ padding:30px 30px 34px; }
+  @media (max-width:620px){ .dir-in{ padding:24px 20px 26px; } }
+  .dhead{ display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; margin-bottom:4px; }
+  .dnum{ font-size:12px; font-weight:700; letter-spacing:.14em; opacity:.6; font-variant-numeric:tabular-nums; }
+  .dname{ font-size:clamp(21px,3.4vw,27px); font-weight:720; letter-spacing:-.02em; margin:0; }
+  .dtag{ margin-left:auto; font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase;
+    padding:4px 10px; border-radius:999px; }
+  .thesis{ font-size:15.5px; margin:10px 0 22px; max-width:58ch; text-wrap:pretty; }
+  .thesis b{ font-weight:680; }
+
+  .grid{ display:grid; grid-template-columns:1.05fr .95fr; gap:30px; }
+  @media (max-width:760px){ .grid{ grid-template-columns:1fr; gap:26px; } }
+  .lab{ font-size:10.5px; font-weight:700; letter-spacing:.09em; text-transform:uppercase; opacity:.55; margin:0 0 11px; }
+  .block + .block{ margin-top:24px; }
+
+  /* app-icoon + woordmerk lockup */
+  .lockup{ display:flex; align-items:center; gap:16px; }
+  .appicon{ width:64px; height:64px; border-radius:16px; flex:0 0 auto; display:grid; place-items:center;
+    box-shadow:0 8px 22px -12px rgba(0,0,0,.5), inset 0 0 0 .5px rgba(255,255,255,.10); }
+  .wm{ font-weight:730; letter-spacing:-.028em; font-size:30px; line-height:1; }
+
+  /* menubalk-strip */
+  .menubar{ display:flex; align-items:center; gap:12px; padding:0 12px; height:28px; border-radius:9px;
+    font-size:12.5px; box-shadow:0 0 0 .5px var(--m-line, rgba(0,0,0,.08)); }
+  .menubar .mb-brand{ display:inline-flex; align-items:center; gap:7px; font-weight:650; }
+  .menubar .mb-sp{ margin-left:auto; opacity:.6; font-variant-numeric:tabular-nums; }
+
+  /* pill-rij */
+  .pills{ display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start; }
+  .pcard{ display:flex; flex-direction:column; gap:8px; align-items:center; }
+  .plab{ font-size:11px; opacity:.6; }
+
+  /* swatches */
+  .sw{ display:flex; gap:9px; flex-wrap:wrap; }
+  .chip{ display:flex; flex-direction:column; gap:6px; }
+  .chip .dot{ width:44px; height:44px; border-radius:11px; box-shadow:inset 0 0 0 .5px rgba(0,0,0,.14); }
+  .chip .hx{ font-family:var(--mono); font-size:10.5px; letter-spacing:-.02em; opacity:.72; text-align:center; }
+
+  /* type-spec */
+  .typ .row{ display:flex; align-items:baseline; gap:10px; padding:9px 0; border-top:.5px solid var(--t-line,rgba(0,0,0,.1)); }
+  .typ .row:first-child{ border-top:0; }
+  .typ .k{ font-size:11px; letter-spacing:.06em; text-transform:uppercase; opacity:.55; width:82px; flex:0 0 auto; }
+  .typ .v{ font-size:14px; }
+  .typ .v small{ opacity:.6; font-weight:400; }
+
+  .fit{ font-size:13.5px; line-height:1.5; }
+  .fit .tone{ font-style:italic; opacity:.9; }
+  .fit .use{ opacity:.7; margin-top:6px; }
+
+  footer.close{ padding:40px 0 70px; }
+  footer.close .card{ background:var(--ss); border:.5px solid var(--sl); border-radius:18px; padding:26px 28px; }
+  footer.close h2{ font-size:20px; letter-spacing:-.02em; margin:0 0 12px; }
+  footer.close p{ color:var(--sm); font-size:14.5px; margin:0 0 10px; max-width:68ch; }
+  footer.close b{ color:var(--si); }
+  .rise{ animation:rise .55s cubic-bezier(.2,.7,.2,1) both; }
+  @keyframes rise{ from{ opacity:0; transform:translateY(14px);} to{ opacity:1; transform:none; } }
+  @keyframes blink{ 0%,48%{ opacity:1; } 49%,100%{ opacity:0; } }
+  @media (prefers-reduced-motion:reduce){ *{ animation:none !important; } }
+
+  /* ================= 01 · KLOETH ================= */
+  .d1{ background:radial-gradient(130% 100% at 15% -8%,rgba(55,58,241,.2),#1e1e22 58%); color:#f1f1f4;
+    --t-line:rgba(255,255,255,.11); --m-line:rgba(255,255,255,.09); }
+  .d1 .dtag{ background:rgba(55,58,241,.2); color:#a9a6ff; box-shadow:inset 0 0 0 .5px rgba(55,58,241,.4); }
+  .d1 .thesis b{ color:#8f8dff; } .d1 .lab{ color:#8b88ff; opacity:.9; }
+  .d1 .thesis{ color:#cbcad3; }
+  .d1 .appicon{ background:linear-gradient(155deg,#5f4dff,#373af1); color:#fff;
+    box-shadow:0 12px 30px -14px rgba(55,58,241,.7), inset 0 0 0 .5px rgba(255,255,255,.16); }
+  .d1 .appicon .eq{ height:26px; }
+  .d1 .wm{ color:#f1f1f4; }
+  .d1 .wm em{ font-style:normal; color:#8f83ff; }
+  .d1 .menubar{ background:#26262b; color:#9c9ba4; }
+  .d1 .menubar .mb-brand{ color:#f1f1f4; } .d1 .menubar .mb-brand .eq{ color:#8f83ff; }
+  .d1 .pill{ height:40px; padding:0 16px; border-radius:20px; display:inline-flex; align-items:center; gap:8px;
+    background:#26262c; box-shadow:inset 0 0 0 .5px rgba(55,58,241,.35), 0 14px 30px -14px rgba(55,58,241,.55); }
+  .d1 .pill .eq{ height:18px; color:#8f83ff; }
+  .d1 .pill.rec .eq{ color:#ff5470; }
+  .d1 .pill .tick{ color:#3ddc97; font-weight:800; font-size:17px; }
+  .d1 .plab{ color:#9c9ba4; }
+  .d1 .fit{ color:#c4c3cc; } .d1 .fit .tone{ color:#f1f1f4; }
+  .d1 .typ .v{ font-family:var(--sans); color:#f1f1f4; }
+  .d1 .chip .hx{ color:#b7b6c2; opacity:.9; }
+
+  /* ================= 02 · PROMPT ================= */
+  .d2{ background:#0e0f12; color:#e7e7dd; --t-line:rgba(255,255,255,.10); --m-line:rgba(255,255,255,.09); font-family:var(--mono); }
+  .d2 .dname, .d2 .wm{ font-family:var(--mono); }
+  .d2 .dtag{ background:rgba(232,176,75,.16); color:#e8b04b; }
+  .d2 .thesis b{ color:#e8b04b; } .d2 .lab{ color:#e8b04b; opacity:.8; }
+  .d2 .appicon{ background:#16181c; box-shadow:inset 0 0 0 1px rgba(232,176,75,.5); color:#e8b04b; }
+  .d2 .caret{ font-size:34px; line-height:1; font-weight:700; }
+  .d2 .caret b{ display:inline-block; width:.5em; }
+  .d2 .cur{ display:inline-block; width:.46em; height:1em; background:currentColor; transform:translateY(.12em); animation:blink 1.15s step-end infinite; }
+  .d2 .wm{ color:#e7e7dd; font-size:26px; letter-spacing:-.02em; }
+  .d2 .wm i{ color:#e8b04b; font-style:normal; animation:blink 1.15s step-end infinite; }
+  .d2 .menubar{ background:#16181c; color:#8a8d86; }
+  .d2 .menubar .mb-brand{ color:#e7e7dd; }
+  .d2 .pill{ height:36px; padding:0 13px; border-radius:8px; display:inline-flex; align-items:center; gap:9px;
+    background:#16181c; box-shadow:inset 0 0 0 1px rgba(255,255,255,.10); font-size:13px; }
+  .d2 .pill .rd{ width:8px; height:8px; border-radius:50%; background:#e8b04b; }
+  .d2 .pill.rec .rd{ animation:blink 1.1s ease-in-out infinite; }
+  .d2 .pill .idl{ width:8px; height:8px; border-radius:50%; background:#57595c; }
+  .d2 .pill .ok{ color:#7bd88f; } .d2 .pill .t{ color:#5ec8c8; }
+  .d2 .chip .dot{ box-shadow:inset 0 0 0 .5px rgba(255,255,255,.18); }
+  .d2 .typ .row{ border-color:rgba(255,255,255,.1); }
+
+  /* ================= 03 · INKT ================= */
+  .d3{ background:#efe9db; color:#211f1a; --t-line:rgba(33,31,26,.16); --m-line:rgba(33,31,26,.14); }
+  .d3 .dname, .d3 .wm, .d3 .thesis, .d3 .fit{ font-family:var(--serif); }
+  .d3 .dtag{ background:#28406e; color:#f3efe4; }
+  .d3 .thesis b{ color:#28406e; } .d3 .lab{ color:#28406e; opacity:.75; letter-spacing:.12em; }
+  .d3 .appicon{ background:#211f1a; color:#efe9db; border-radius:14px; }
+  .d3 .appicon .eq{ height:24px; } .d3 .appicon .eq i{ border-radius:3px; }
+  .d3 .wm{ font-weight:600; letter-spacing:-.01em; font-size:32px; }
+  .d3 .wm em{ font-style:italic; color:#28406e; font-weight:500; }
+  .d3 .menubar{ background:#f6f2e8; color:#6b665a; }
+  .d3 .menubar .mb-brand{ color:#211f1a; font-family:var(--serif); }
+  .d3 .pill{ height:38px; padding:0 16px; border-radius:19px; display:inline-flex; align-items:center; gap:9px;
+    background:#f6f2e8; color:#211f1a; box-shadow:inset 0 0 0 1px rgba(33,31,26,.18); font-family:var(--serif); font-size:14px; }
+  .d3 .pill .eq{ height:14px; color:#6b665a; }
+  .d3 .pill.rec .eq{ color:#8a2f2a; }
+  .d3 .pill .tick{ color:#3a6b4f; font-weight:700; }
+  .d3 .chip .hx{ font-family:var(--mono); }
+
+  /* ================= 04 · SIGNAAL ================= */
+  .d4{ background:radial-gradient(120% 90% at 20% 0%,#16121f,#0b0b0f 70%); color:#f4f4f8;
+    --t-line:rgba(255,255,255,.11); --m-line:rgba(255,255,255,.10); }
+  .d4 .grad{ background:linear-gradient(92deg,#ff2d78,#22e0cf); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .d4 .dtag{ background:linear-gradient(92deg,#ff2d78,#22e0cf); color:#0b0b0f; }
+  .d4 .thesis b{ color:#ff5c94; } .d4 .lab{ color:#22e0cf; opacity:.8; }
+  .d4 .appicon{ background:#0b0b0f; box-shadow:inset 0 0 0 1px rgba(255,255,255,.12); }
+  .d4 .appicon .eq{ height:26px; }
+  .d4 .appicon .eq i{ background:linear-gradient(180deg,#ff2d78,#22e0cf); }
+  .d4 .wm{ font-size:33px; font-weight:800; letter-spacing:-.03em; }
+  .d4 .menubar{ background:#131319; color:#8f8f9c; }
+  .d4 .menubar .mb-brand{ color:#f4f4f8; }
+  .d4 .menubar .mb-brand .eq i{ background:linear-gradient(180deg,#ff2d78,#22e0cf); }
+  .d4 .pill{ height:42px; padding:2px; border-radius:22px; display:inline-flex; align-items:center;
+    background:linear-gradient(92deg,#ff2d78,#22e0cf); }
+  .d4 .pill .inner{ height:100%; padding:0 16px; border-radius:20px; background:#0e0e13; display:inline-flex; align-items:center; gap:8px; }
+  .d4 .pill .eq{ height:18px; }
+  .d4 .pill .eq i{ background:linear-gradient(180deg,#ff2d78,#22e0cf); }
+  .d4 .pill.idle{ background:none; padding:0; box-shadow:inset 0 0 0 1px rgba(255,255,255,.14); border-radius:22px; }
+  .d4 .pill.idle .inner{ background:transparent; }
+  .d4 .pill.idle .eq i{ background:#54545e; }
+  .d4 .pill .tick{ font-weight:800; font-size:17px; }
+  .d4 .chip .dot{ box-shadow:inset 0 0 0 .5px rgba(255,255,255,.2); }
+
+  /* ================= 05 · RUST ================= */
+  .d5{ background:#eef1ec; color:#2a302d; --t-line:rgba(42,48,45,.13); --m-line:rgba(42,48,45,.11); font-family:var(--avenir); }
+  .d5 .dname, .d5 .wm{ font-family:var(--avenir); }
+  .d5 .dtag{ background:#5c8c7b; color:#fff; }
+  .d5 .thesis b{ color:#4c7768; } .d5 .lab{ color:#4c7768; opacity:.8; }
+  .d5 .appicon{ background:linear-gradient(160deg,#f3f6f1,#dfe6de); color:#5c8c7b; border-radius:19px;
+    box-shadow:0 8px 20px -14px rgba(42,48,45,.5), inset 0 0 0 .5px rgba(42,48,45,.08); }
+  .d5 .appicon .eq{ height:24px; } .d5 .appicon .eq i{ border-radius:99px; }
+  .d5 .wm{ font-weight:650; letter-spacing:-.02em; }
+  .d5 .menubar{ background:#f7f8f5; color:#666f69; }
+  .d5 .menubar .mb-brand{ color:#2a302d; } .d5 .menubar .mb-brand .eq{ color:#5c8c7b; }
+  .d5 .pill{ height:40px; padding:0 17px; border-radius:20px; display:inline-flex; align-items:center; gap:9px;
+    background:#f7f8f5; box-shadow:0 8px 20px -14px rgba(42,48,45,.45), inset 0 0 0 .5px rgba(42,48,45,.1); }
+  .d5 .pill .eq{ height:16px; color:#9aa6a0; }
+  .d5 .pill.rec .eq{ color:#c67b52; }
+  .d5 .pill .tick{ color:#5c8c7b; font-weight:750; }
+  .d5 .chip .hx{ font-family:var(--mono); }
+
+  /* ================= 06 · HELDER (05-structuur, grafiet-monochroom) ================= */
+  .d6{ background:#eeeeec; color:#1e1e22; --t-line:rgba(30,30,34,.14); --m-line:rgba(30,30,34,.12); font-family:var(--avenir); }
+  .d6 .dname, .d6 .wm{ font-family:var(--avenir); }
+  .d6 .dtag{ background:#1e1e22; color:#eeeeec; }
+  .d6 .lab{ color:#6d6d70; opacity:.9; }
+  .d6 .appicon{ background:linear-gradient(160deg,#2c2c31,#17171b); color:#f1f1f2; border-radius:19px;
+    box-shadow:0 10px 24px -14px rgba(20,20,24,.6), inset 0 0 0 .5px rgba(255,255,255,.10); }
+  .d6 .appicon .eq{ height:24px; } .d6 .appicon .eq i{ border-radius:99px; }
+  .d6 .wm{ font-weight:650; letter-spacing:-.02em; color:#1e1e22; }
+  .d6 .wm em{ font-style:normal; color:#c67b52; }
+  .d6 .menubar{ background:#f7f7f5; color:#6d6d70; }
+  .d6 .menubar .mb-brand{ color:#1e1e22; } .d6 .menubar .mb-brand .eq{ color:#1e1e22; }
+  .d6 .pill{ height:40px; padding:0 17px; border-radius:20px; display:inline-flex; align-items:center; gap:9px;
+    background:#f7f7f5; box-shadow:0 8px 22px -14px rgba(20,20,24,.4), inset 0 0 0 .5px rgba(30,30,34,.12); }
+  .d6 .pill .eq{ height:16px; color:#a2a2a6; }
+  .d6 .pill.rec .eq{ color:#c67b52; }
+  .d6 .pill .tick{ color:#1e1e22; font-weight:750; }
+  .d6 .chip .hx{ font-family:var(--mono); }
+</style>
+
+<div class="bar">
+  <div class="wrap">
+    <span class="brand"><span class="eq" style="height:15px"><i></i><i></i><i></i><i></i></span>SamFlow</span>
+    <nav class="idx">
+      <a href="#d1"><b>01</b> <span>Kloeth</span></a>
+      <a href="#d2"><b>02</b> <span>Prompt</span></a>
+      <a href="#d3"><b>03</b> <span>Inkt</span></a>
+      <a href="#d4"><b>04</b> <span>Signaal</span></a>
+      <a href="#d5"><b>05</b> <span>Rust</span></a>
+      <a href="#d6"><b>06</b> <span>Helder</span></a>
+    </nav>
+  </div>
+</div>
+
+<div class="wrap">
+  <header class="lede">
+    <p class="eyebrow">SamFlow · brand-verkenning</p>
+    <h1>Zes richtingen, zes werelden</h1>
+    <p>Je huidige merk — macOS-grijs met een vermiljoen accent en de equalizer-staafjes — is nét gemaakt en al netjes. Maar het is <strong>Apple's smaak, niet die van jou</strong>: het had ieders dicteer-app kunnen zijn. Deze pagina zet zes volwaardige alternatieven neer, elk met een eigen strategie, palet, typografie en toon. Ze zijn niet beschreven maar <strong>echt gerenderd</strong>: het woordmerk, het app-icoon, de menubalk en de pill-bij-de-cursor staan er telkens in hun eigen wereld, zodat je ze naast elkaar kunt vóélen.</p>
+    <p>Richting <strong>01 · Kloeth</strong> is degene die je expliciet vroeg: gebouwd op de branding van <a href="https://www.samkloeth.nl">samkloeth.nl</a> — het indigo <code>#373af1</code>, het violet, de lavendel en Neue Regrade. De andere vier verkennen bewust andere kanten op, zodat het contrast iets zegt. Richting <strong>06 · Helder</strong> kwam er als laatste bij: de kalme structuur van 05, maar in een strak grafiet-monochroom (<code>#1E1E22</code>) met één warme klei-toon in plaats van kleur.</p>
+
+    <div class="now">
+      <div class="nowmark">
+        <div class="tile"><span class="eq" style="height:20px; color:#E5463C"><i></i><i></i><i></i><i></i></span></div>
+        <div class="wm">SamFlow</div>
+      </div>
+      <div class="txt">
+        <span class="chip">Vertrekpunt</span>
+        <b>Waar je nu staat.</b> Neutraal systeemgrijs, vermiljoen <code>#E5463C</code> als enig accent, San Francisco als font, staafjes als merk. Correct en rustig — maar zonder eigen handtekening. Dat is precies wat we hieronder wél geven.
+      </div>
+    </div>
+  </header>
+</div>
+
+<div class="wrap">
+
+  <!-- ============ 01 · KLOETH ============ -->
+  <section class="dir d1 rise" id="d1">
+    <div class="dir-in">
+      <div class="dhead">
+        <span class="dnum">01</span>
+        <h2 class="dname">Kloeth</h2>
+        <span class="dtag">jouw persoonlijke brand</span>
+      </div>
+      <p class="thesis">SamFlow als <b>een Sam Kloeth-product</b>. Het elektrische indigo, het violet en de lavendel van je eigen site trekken de app in je studiofamilie — wie SamFlow gebruikt herkent de hand erachter. Positionering: geen anoniem hulpmiddel maar iets dat een designer bouwde en gebruikt.</p>
+
+      <div class="grid">
+        <div class="col">
+          <div class="block">
+            <p class="lab">Merk &amp; woordmerk</p>
+            <div class="lockup">
+              <div class="appicon"><span class="eq"><i></i><i></i><i></i><i></i></span></div>
+              <div class="wm">Sam<em>Flow</em></div>
+            </div>
+          </div>
+          <div class="block">
+            <p class="lab">In de menubalk</p>
+            <div class="menubar">
+              <span class="mb-brand"><span class="eq" style="height:14px"><i></i><i></i><i></i><i></i></span> SamFlow</span>
+              <span class="mb-sp">za 14:22</span>
+            </div>
+          </div>
+          <div class="block">
+            <p class="lab">De pill bij de cursor</p>
+            <div class="pills">
+              <div class="pcard"><div class="pill"><span class="eq"><i></i><i></i><i></i><i></i></span></div><span class="plab">klaar</span></div>
+              <div class="pcard"><div class="pill rec"><span class="eq live"><i></i><i></i><i></i><i></i><i></i></span></div><span class="plab">opnemen</span></div>
+              <div class="pcard"><div class="pill"><span class="tick">✓</span></div><span class="plab">geplakt</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="block">
+            <p class="lab">Palet</p>
+            <div class="sw">
+              <div class="chip"><span class="dot" style="background:#373af1"></span><span class="hx">#373AF1</span></div>
+              <div class="chip"><span class="dot" style="background:#5f4dff"></span><span class="hx">#5F4DFF</span></div>
+              <div class="chip"><span class="dot" style="background:rgba(55,58,241,.2)"></span><span class="hx">373AF1·20%</span></div>
+              <div class="chip"><span class="dot" style="background:#ff5470"></span><span class="hx">#FF5470</span></div>
+              <div class="chip"><span class="dot" style="background:#1e1e22"></span><span class="hx">#1E1E22</span></div>
+            </div>
+          </div>
+          <div class="block typ">
+            <p class="lab">Typografie</p>
+            <div class="row"><span class="k">Display</span><span class="v">Neue Regrade <small>· je eigen site-font</small></span></div>
+            <div class="row"><span class="k">Interface</span><span class="v">SF Pro / systeem</span></div>
+          </div>
+          <div class="block fit">
+            <p class="lab">Toon &amp; toepassing</p>
+            <p class="tone">"Ingebouwd door Sam. Houd Fn vast en praat."</p>
+            <p class="use">Past als je SamFlow ooit publiek deelt of op je portfolio zet — het merk werkt dan mee als visitekaartje. Rood-alarm wordt een warme coral die naast het violet klopt.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 02 · PROMPT ============ -->
+  <section class="dir d2 rise" id="d2">
+    <div class="dir-in">
+      <div class="dhead">
+        <span class="dnum">02</span>
+        <h2 class="dname">Prompt</h2>
+        <span class="dtag">on-device · voor makers</span>
+      </div>
+      <p class="thesis">De sterkste waarheid van SamFlow is dat het <b>100% lokaal</b> draait — geen cloud, geen account, gewoon snel. Deze richting maakt daar het hele merk van: monospace, terminal-charcoal, één amber accent, en een knipperende caret als icoon in plaats van staafjes. Eerlijk, technisch, zonder marketingtaal.</p>
+
+      <div class="grid">
+        <div class="col">
+          <div class="block">
+            <p class="lab">Merk &amp; woordmerk</p>
+            <div class="lockup">
+              <div class="appicon"><span class="caret">▍</span></div>
+              <div class="wm">samflow<i class="cur">&nbsp;</i></div>
+            </div>
+          </div>
+          <div class="block">
+            <p class="lab">In de menubalk</p>
+            <div class="menubar">
+              <span class="mb-brand">▍ samflow</span>
+              <span class="mb-sp">14:22</span>
+            </div>
+          </div>
+          <div class="block">
+            <p class="lab">De pill bij de cursor</p>
+            <div class="pills">
+              <div class="pcard"><div class="pill"><span class="idl"></span> idle</div><span class="plab">klaar</span></div>
+              <div class="pcard"><div class="pill rec"><span class="rd"></span> rec 0:04</div><span class="plab">opnemen</span></div>
+              <div class="pcard"><div class="pill"><span class="ok">✓</span> paste</div><span class="plab">geplakt</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="block">
+            <p class="lab">Palet</p>
+            <div class="sw">
+              <div class="chip"><span class="dot" style="background:#0e0f12"></span><span class="hx">#0E0F12</span></div>
+              <div class="chip"><span class="dot" style="background:#16181c"></span><span class="hx">#16181C</span></div>
+              <div class="chip"><span class="dot" style="background:#e8b04b"></span><span class="hx">#E8B04B</span></div>
+              <div class="chip"><span class="dot" style="background:#5ec8c8"></span><span class="hx">#5EC8C8</span></div>
+              <div class="chip"><span class="dot" style="background:#e7e7dd"></span><span class="hx">#E7E7DD</span></div>
+            </div>
+          </div>
+          <div class="block typ">
+            <p class="lab">Typografie</p>
+            <div class="row"><span class="k">Overal</span><span class="v">Berkeley Mono / JetBrains Mono</span></div>
+            <div class="row"><span class="k">Fallback</span><span class="v">SF Mono / Menlo</span></div>
+          </div>
+          <div class="block fit">
+            <p class="lab">Toon &amp; toepassing</p>
+            <p class="tone">"Fn. Praat. Plak. Niks verlaat je Mac."</p>
+            <p class="use">Past bij het echte publiek: developers en power-users die de terminal bewonen en privacy waarderen. Sluit naadloos aan op de open-source-kant van het project.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 03 · INKT ============ -->
+  <section class="dir d3 rise" id="d3">
+    <div class="dir-in">
+      <div class="dhead">
+        <span class="dnum">03</span>
+        <h2 class="dname">Inkt</h2>
+        <span class="dtag">redactioneel · voor schrijvers</span>
+      </div>
+      <p class="thesis">SamFlow gaat niet over audio, het gaat over <b>woorden</b>. Deze richting behandelt dicteren als schrijfgereedschap: warm ivoor, een echte serif, een bezonken Prussisch blauw als accent — bewust wég van het cliché cream-plus-terracotta. Rustig, menselijk, literair. Je stem, op papier.</p>
+
+      <div class="grid">
+        <div class="col">
+          <div class="block">
+            <p class="lab">Merk &amp; woordmerk</p>
+            <div class="lockup">
+              <div class="appicon"><span class="eq"><i></i><i></i><i></i><i></i></span></div>
+              <div class="wm">Sam<em>Flow</em></div>
+            </div>
+          </div>
+          <div class="block">
+            <p class="lab">In de menubalk</p>
+            <div class="menubar">
+              <span class="mb-brand"><span class="eq" style="height:13px"><i></i><i></i><i></i><i></i></span> SamFlow</span>
+              <span class="mb-sp">za 14:22</span>
+            </div>
+          </div>
+          <div class="block">
+            <p class="lab">De pill bij de cursor</p>
+            <div class="pills">
+              <div class="pcard"><div class="pill"><span class="eq"><i></i><i></i><i></i><i></i></span> klaar</div><span class="plab">klaar</span></div>
+              <div class="pcard"><div class="pill rec"><span class="eq live"><i></i><i></i><i></i><i></i><i></i></span> luistert</div><span class="plab">opnemen</span></div>
+              <div class="pcard"><div class="pill"><span class="tick">✓</span> geplakt</div><span class="plab">geplakt</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="block">
+            <p class="lab">Palet</p>
+            <div class="sw">
+              <div class="chip"><span class="dot" style="background:#efe9db"></span><span class="hx">#EFE9DB</span></div>
+              <div class="chip"><span class="dot" style="background:#211f1a"></span><span class="hx">#211F1A</span></div>
+              <div class="chip"><span class="dot" style="background:#28406e"></span><span class="hx">#28406E</span></div>
+              <div class="chip"><span class="dot" style="background:#8a2f2a"></span><span class="hx">#8A2F2A</span></div>
+              <div class="chip"><span class="dot" style="background:#3a6b4f"></span><span class="hx">#3A6B4F</span></div>
+            </div>
+          </div>
+          <div class="block typ">
+            <p class="lab">Typografie</p>
+            <div class="row"><span class="k">Display</span><span class="v">GT Sectra / Freight <small>· serif</small></span></div>
+            <div class="row"><span class="k">Interface</span><span class="v">SF Pro / systeem</span></div>
+          </div>
+          <div class="block fit">
+            <p class="lab">Toon &amp; toepassing</p>
+            <p class="tone">"Je stem, op papier. Praat, en het staat er."</p>
+            <p class="use">Past als je SamFlow richt op wie schrijft — mails, notities, essays. De serif geeft rust en gewicht; het blauw houdt het modern in plaats van nostalgisch.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 04 · SIGNAAL ============ -->
+  <section class="dir d4 rise" id="d4">
+    <div class="dir-in">
+      <div class="dhead">
+        <span class="dnum">04</span>
+        <h2 class="dname"><span class="grad">Signaal</span></h2>
+        <span class="dtag">expressief · met karakter</span>
+      </div>
+      <p class="thesis">De "flow" letterlijk gemaakt. Een <b>golf van magenta naar cyan</b> stroomt door het hele merk — het geluid dat tekst wordt. Zwart canvas, groot en zelfverzekerd, energie waar de anderen ingetogen zijn. Voor als SamFlow mág opvallen tussen de grijze systeemtools.</p>
+
+      <div class="grid">
+        <div class="col">
+          <div class="block">
+            <p class="lab">Merk &amp; woordmerk</p>
+            <div class="lockup">
+              <div class="appicon"><span class="eq"><i></i><i></i><i></i><i></i></span></div>
+              <div class="wm">Sam<span class="grad">Flow</span></div>
+            </div>
+          </div>
+          <div class="block">
+            <p class="lab">In de menubalk</p>
+            <div class="menubar">
+              <span class="mb-brand"><span class="eq" style="height:14px"><i></i><i></i><i></i><i></i></span> SamFlow</span>
+              <span class="mb-sp">za 14:22</span>
+            </div>
+          </div>
+          <div class="block">
+            <p class="lab">De pill bij de cursor</p>
+            <div class="pills">
+              <div class="pcard"><div class="pill idle"><span class="inner"><span class="eq"><i></i><i></i><i></i><i></i></span></span></div><span class="plab">klaar</span></div>
+              <div class="pcard"><div class="pill"><span class="inner"><span class="eq live"><i></i><i></i><i></i><i></i><i></i></span></span></div><span class="plab">opnemen</span></div>
+              <div class="pcard"><div class="pill"><span class="inner"><span class="tick grad">✓</span></span></div><span class="plab">geplakt</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="block">
+            <p class="lab">Palet</p>
+            <div class="sw">
+              <div class="chip"><span class="dot" style="background:#ff2d78"></span><span class="hx">#FF2D78</span></div>
+              <div class="chip"><span class="dot" style="background:#22e0cf"></span><span class="hx">#22E0CF</span></div>
+              <div class="chip"><span class="dot" style="background:linear-gradient(135deg,#ff2d78,#22e0cf)"></span><span class="hx">gradient</span></div>
+              <div class="chip"><span class="dot" style="background:#3ce089"></span><span class="hx">#3CE089</span></div>
+              <div class="chip"><span class="dot" style="background:#0b0b0f"></span><span class="hx">#0B0B0F</span></div>
+            </div>
+          </div>
+          <div class="block typ">
+            <p class="lab">Typografie</p>
+            <div class="row"><span class="k">Display</span><span class="v">Clash Display / Druk <small>· zwaar</small></span></div>
+            <div class="row"><span class="k">Interface</span><span class="v">SF Pro / systeem</span></div>
+          </div>
+          <div class="block fit">
+            <p class="lab">Toon &amp; toepassing</p>
+            <p class="tone">"Spreek. Het stroomt."</p>
+            <p class="use">Past als SamFlow een product met een gezicht mag zijn — launch-pagina, screenshots, een merk dat blijft hangen. De gradient is dé handtekening; gebruik hem spaarzaam zodat hij knalt.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 05 · RUST ============ -->
+  <section class="dir d5 rise" id="d5">
+    <div class="dir-in">
+      <div class="dhead">
+        <span class="dnum">05</span>
+        <h2 class="dname">Rust</h2>
+        <span class="dtag">kalm · zonder ophef</span>
+      </div>
+      <p class="thesis">Een dicteer-app hoeft niet te alarmeren. Deze richting haalt het rode opname-lampje weg en vervangt het door een <b>kalme klei-toon</b> op zacht salie-grijs. Humanistische ronde vormen, veel lucht, niets dat schreeuwt. Gereedschap dat je de hele dag naast je hebt zonder dat het aandacht opeist.</p>
+
+      <div class="grid">
+        <div class="col">
+          <div class="block">
+            <p class="lab">Merk &amp; woordmerk</p>
+            <div class="lockup">
+              <div class="appicon"><span class="eq"><i></i><i></i><i></i><i></i></span></div>
+              <div class="wm">SamFlow</div>
+            </div>
+          </div>
+          <div class="block">
+            <p class="lab">In de menubalk</p>
+            <div class="menubar">
+              <span class="mb-brand"><span class="eq" style="height:14px"><i></i><i></i><i></i><i></i></span> SamFlow</span>
+              <span class="mb-sp">za 14:22</span>
+            </div>
+          </div>
+          <div class="block">
+            <p class="lab">De pill bij de cursor</p>
+            <div class="pills">
+              <div class="pcard"><div class="pill"><span class="eq"><i></i><i></i><i></i><i></i></span></div><span class="plab">klaar</span></div>
+              <div class="pcard"><div class="pill rec"><span class="eq live"><i></i><i></i><i></i><i></i><i></i></span></div><span class="plab">opnemen</span></div>
+              <div class="pcard"><div class="pill"><span class="tick">✓</span></div><span class="plab">geplakt</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="block">
+            <p class="lab">Palet</p>
+            <div class="sw">
+              <div class="chip"><span class="dot" style="background:#eef1ec"></span><span class="hx">#EEF1EC</span></div>
+              <div class="chip"><span class="dot" style="background:#5c8c7b"></span><span class="hx">#5C8C7B</span></div>
+              <div class="chip"><span class="dot" style="background:#c67b52"></span><span class="hx">#C67B52</span></div>
+              <div class="chip"><span class="dot" style="background:#6f93b0"></span><span class="hx">#6F93B0</span></div>
+              <div class="chip"><span class="dot" style="background:#2a302d"></span><span class="hx">#2A302D</span></div>
+            </div>
+          </div>
+          <div class="block typ">
+            <p class="lab">Typografie</p>
+            <div class="row"><span class="k">Display</span><span class="v">Aeonik / Söhne <small>· humanist</small></span></div>
+            <div class="row"><span class="k">Interface</span><span class="v">Avenir Next / systeem</span></div>
+          </div>
+          <div class="block fit">
+            <p class="lab">Toon &amp; toepassing</p>
+            <p class="tone">"Praat maar. Ik luister mee, zonder ophef."</p>
+            <p class="use">Past als je de app als stille achtergrond-assistent ziet. De klei-toon voor opname voelt warm in plaats van dringend — geschikt voor lang, ontspannen gebruik.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 06 · HELDER ============ -->
+  <section class="dir d6 rise" id="d6">
+    <div class="dir-in">
+      <div class="dhead">
+        <span class="dnum">06</span>
+        <h2 class="dname">Helder</h2>
+        <span class="dtag">grafiet · kalm</span>
+      </div>
+      <p class="thesis">De <b>kalme, luchtige structuur van 05</b> — rustige lichte grond, ronde humanist-vormen, en de klei-opnametoon in plaats van rood-alarm — maar in <b>grafiet <code>#1E1E22</code></b> in plaats van kleur. Eén donkere merktoon, één warm klei-moment op het punt dat telt (opnemen), verder alles neutraal. Feitelijk is dit je bestaande donkere icoon-tegel, nu met een merk-systeem eromheen dat klopt: <b>grafiet + klei</b> in plaats van grijs + rood.</p>
+
+      <div class="grid">
+        <div class="col">
+          <div class="block">
+            <p class="lab">Merk &amp; woordmerk</p>
+            <div class="lockup">
+              <div class="appicon"><span class="eq"><i></i><i></i><i></i><i></i></span></div>
+              <div class="wm">Sam<em>Flow</em></div>
+            </div>
+          </div>
+          <div class="block">
+            <p class="lab">In de menubalk</p>
+            <div class="menubar">
+              <span class="mb-brand"><span class="eq" style="height:14px"><i></i><i></i><i></i><i></i></span> SamFlow</span>
+              <span class="mb-sp">za 14:22</span>
+            </div>
+          </div>
+          <div class="block">
+            <p class="lab">De pill bij de cursor</p>
+            <div class="pills">
+              <div class="pcard"><div class="pill"><span class="eq"><i></i><i></i><i></i><i></i></span></div><span class="plab">klaar</span></div>
+              <div class="pcard"><div class="pill rec"><span class="eq live"><i></i><i></i><i></i><i></i><i></i></span></div><span class="plab">opnemen</span></div>
+              <div class="pcard"><div class="pill"><span class="tick">✓</span></div><span class="plab">geplakt</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="block">
+            <p class="lab">Palet</p>
+            <div class="sw">
+              <div class="chip"><span class="dot" style="background:#1e1e22"></span><span class="hx">#1E1E22</span></div>
+              <div class="chip"><span class="dot" style="background:#c67b52"></span><span class="hx">#C67B52</span></div>
+              <div class="chip"><span class="dot" style="background:#6d6d70"></span><span class="hx">#6D6D70</span></div>
+              <div class="chip"><span class="dot" style="background:#eeeeec"></span><span class="hx">#EEEEEC</span></div>
+              <div class="chip"><span class="dot" style="background:#f7f7f5"></span><span class="hx">#F7F7F5</span></div>
+            </div>
+          </div>
+          <div class="block typ">
+            <p class="lab">Typografie</p>
+            <div class="row"><span class="k">Display</span><span class="v">Aeonik / Söhne <small>· humanist</small></span></div>
+            <div class="row"><span class="k">Interface</span><span class="v">Avenir Next / systeem</span></div>
+          </div>
+          <div class="block fit">
+            <p class="lab">Toon &amp; toepassing</p>
+            <p class="tone">"Praat maar. Kalm en strak — de klei licht alleen op als 't luistert."</p>
+            <p class="use">De dagelijkse-gebruiks-kalmte van 05, zonder de indigo. Puur grafiet met één warm accent — volwassen en rustig. Laat zich net zo goed omdraaien naar een <b>donkere grond</b> (<code>#1E1E22</code> als vlak, lichte staafjes) als je 'm liever in dark-mode wilt.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="close">
+    <div class="card">
+      <h2>Hoe nu kiezen</h2>
+      <p><b>01 · Kloeth</b> is de veilige, strategische keuze: het bindt SamFlow aan jou en aan samkloeth.nl — precies wat je vroeg. <b>02 · Prompt</b> is het eerlijkst tegenover wat de app ís (lokaal, snel, voor makers). <b>03 · Inkt</b> en <b>05 · Rust</b> verzachten en vermenselijken; <b>04 · Signaal</b> durft op te vallen.</p>
+      <p><b>06 · Helder</b> neemt de kalmte van Rust maar laat kleur helemaal los: strak grafiet <code>#1E1E22</code> met één warme klei-toon voor het opname-moment. Rustig, volwassen, en het bouwt voort op je bestaande donkere icoon-tegel. De bouwstenen blijven los te wisselen: je kunt datzelfde grafiet donker in plaats van licht zetten, of een andere warme accent-toner kiezen dan klei. Zeg welke richting (of combinatie) je aanspreekt, dan werk ik die door tot een compleet systeem — icoon-varianten, de echte pill in code, en de bestaande <code>appshell</code>- en <code>menubar</code>-mockups omgekleurd.</p>
+    </div>
+  </footer>
+</div>

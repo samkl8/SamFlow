@@ -1,0 +1,989 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SamFlow — app-interface</title>
+</head>
+<body>
+<style>
+  /* ============ Helder-tokens (uit pill-animations/toggle-colors) ============ */
+  :root{
+    --sg:#f4f4f6; --ss:#ffffff; --sunken:#f7f6f8; --si:#1b1b20; --sm:#5c5c66; --sf:#9a9aa4;
+    --sl:rgba(20,18,30,.10); --slx:rgba(20,18,30,.16);
+    --clay:#c67b52; --green:#33b859; --graphite:#1e1e22;
+    --titlebar:#ececef; --sidebg:#f0eff3; --chip:#ebeaee; --shadow:rgba(20,18,30,.22);
+    --desk1:#e9e8ee; --desk2:#dddce4;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,monospace;
+    --pill-shadow:0 10px 28px rgba(20,18,30,.24), 0 2px 6px rgba(20,18,30,.16),
+                  inset 0 0 0 .5px rgba(255,255,255,.12);
+    --grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E");
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --sg:#0e0e12; --ss:#17171c; --sunken:#121216; --si:#f1f1f4; --sm:#9a9aa4; --sf:#63636d;
+      --sl:rgba(255,255,255,.10); --slx:rgba(255,255,255,.17);
+      --titlebar:#202025; --sidebg:#1b1b20; --chip:#26262c; --shadow:rgba(0,0,0,.55);
+      --desk1:#232329; --desk2:#1a1a1f;
+    }
+  }
+  :root[data-theme="light"]{
+    --sg:#f4f4f6; --ss:#ffffff; --sunken:#f7f6f8; --si:#1b1b20; --sm:#5c5c66; --sf:#9a9aa4;
+    --sl:rgba(20,18,30,.10); --slx:rgba(20,18,30,.16);
+    --titlebar:#ececef; --sidebg:#f0eff3; --chip:#ebeaee; --shadow:rgba(20,18,30,.22);
+    --desk1:#e9e8ee; --desk2:#dddce4;
+  }
+  :root[data-theme="dark"]{
+    --sg:#0e0e12; --ss:#17171c; --sunken:#121216; --si:#f1f1f4; --sm:#9a9aa4; --sf:#63636d;
+    --sl:rgba(255,255,255,.10); --slx:rgba(255,255,255,.17);
+    --titlebar:#202025; --sidebg:#1b1b20; --chip:#26262c; --shadow:rgba(0,0,0,.55);
+    --desk1:#232329; --desk2:#1a1a1f;
+  }
+
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--sg); color:var(--si); font-family:var(--sans);
+    -webkit-font-smoothing:antialiased; line-height:1.55; }
+  .wrap{ max-width:1080px; margin:0 auto; padding:48px 22px 84px; }
+
+  /* ============ framing ============ */
+  .lede{ max-width:660px; margin:0 auto 10px; text-align:center; }
+  .eyebrow{ font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--clay);
+    font-weight:700; margin:0 0 12px; }
+  h1{ font-size:clamp(26px,4.5vw,36px); letter-spacing:-.02em; margin:0 0 12px; line-height:1.1; text-wrap:balance; }
+  .lede p{ font-size:15px; color:var(--sm); margin:0; text-wrap:pretty; }
+  .lede b{ color:var(--si); font-weight:600; }
+
+  .themebar{ display:flex; justify-content:center; margin:22px 0 8px; }
+  .seg{ display:inline-flex; background:var(--sl); border-radius:999px; padding:3px; gap:2px; }
+  .seg button{ font:inherit; font-size:12.5px; font-weight:600; color:var(--sm); border:0; background:transparent;
+    padding:5px 13px; border-radius:999px; cursor:pointer; letter-spacing:-.01em; transition:.15s; }
+  .seg button:hover{ color:var(--si); }
+  .seg button.on{ background:var(--ss); color:var(--si); box-shadow:0 1px 3px rgba(20,18,30,.14), 0 0 0 .5px var(--sl); }
+
+  h2.sec{ font-size:12.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--sf);
+    font-weight:700; margin:52px 0 4px; }
+  .lead{ font-size:14px; color:var(--sm); max-width:66ch; margin:0 0 18px; text-wrap:pretty; }
+  .lead b{ color:var(--si); }
+  .cap{ font-size:12.5px; line-height:1.55; color:var(--sm); padding:0 4px; margin:12px 0 0; max-width:78ch; }
+  .cap b{ color:var(--si); font-weight:600; }
+  .cap .new{ color:var(--clay); font-weight:600; }
+  code{ font-family:var(--mono); font-size:.92em; background:var(--sl); padding:1px 5px; border-radius:5px; }
+
+  /* ============ venster-chrome ============ */
+  .winscroll{ overflow-x:auto; margin:0 -4px; padding:4px; }
+  .win{ background:var(--ss); border-radius:12px; overflow:hidden;
+    box-shadow:0 0 0 .5px var(--slx), 0 32px 60px -38px var(--shadow), 0 10px 26px -20px var(--shadow); }
+  .titlebar{ height:38px; background:var(--titlebar); display:flex; align-items:center; gap:8px;
+    padding:0 14px; border-bottom:.5px solid var(--sl); }
+  .lights{ display:flex; gap:8px; flex:0 0 auto; }
+  .lights span{ width:12px; height:12px; border-radius:50%; display:block; }
+  .lights .r{ background:#FF5F57; } .lights .y{ background:#FEBC2E; } .lights .g{ background:#28C840; }
+  .wintitle{ font-size:13px; font-weight:600; color:var(--si); margin:0 auto; padding-right:44px; letter-spacing:.01em; }
+
+  /* ============ het staafjes-merk ============ */
+  .bars{ display:inline-flex; align-items:flex-end; gap:2px; height:13px; }
+  .bars i{ width:2.5px; border-radius:2px; background:currentColor; display:block; }
+  .bars i:nth-child(1){ height:42%; } .bars i:nth-child(2){ height:74%; }
+  .bars i:nth-child(3){ height:100%; } .bars i:nth-child(4){ height:58%; }
+
+  /* ============ knoppen & controls ============ */
+  .btn{ font-family:inherit; font-size:12.5px; font-weight:600; border:none; cursor:pointer;
+    padding:6px 13px; border-radius:8px; background:var(--chip); color:var(--si);
+    box-shadow:0 0 0 .5px var(--sl); white-space:nowrap; }
+  .btn.primary{ background:var(--clay); color:#fff; padding:8px 17px; font-size:13px;
+    box-shadow:0 6px 16px -8px var(--clay); }
+  .btn.ghost{ background:transparent; box-shadow:none; color:var(--sm); }
+  .btn:focus-visible{ outline:2px solid var(--clay); outline-offset:2px; }
+  .keycap{ font-family:var(--mono); font-size:12px; font-weight:600; color:var(--si);
+    background:var(--ss); border-radius:6px; padding:3px 9px;
+    box-shadow:0 0 0 .5px var(--slx), 0 1.5px 0 var(--slx); }
+
+  .sw{ width:38px; height:23px; border-radius:999px; background:var(--slx); position:relative; flex:0 0 auto; }
+  .sw::after{ content:""; position:absolute; top:2px; left:2px; width:19px; height:19px; border-radius:50%;
+    background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.3); }
+  .sw.on{ background:var(--green); } .sw.on::after{ left:17px; }
+
+  .segc{ display:inline-flex; background:var(--chip); border-radius:8px; padding:2px; gap:2px; box-shadow:0 0 0 .5px var(--sl); }
+  .segc span{ font-size:12px; font-weight:500; color:var(--sm); padding:4px 11px; border-radius:6px; white-space:nowrap; }
+  .segc span.sel{ background:var(--ss); color:var(--si); font-weight:600;
+    box-shadow:0 1px 2px rgba(0,0,0,.15), 0 0 0 .5px var(--sl); }
+  .drop{ display:inline-flex; align-items:center; gap:8px; font-size:12.5px; font-weight:500; background:var(--ss);
+    color:var(--si); padding:5px 10px; border-radius:7px; box-shadow:0 0 0 .5px var(--slx); white-space:nowrap; }
+  .drop .chev{ color:var(--sf); font-size:10px; }
+
+  .badge{ font-size:10.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase;
+    padding:3px 9px; border-radius:999px; white-space:nowrap; }
+  .badge.clay{ color:var(--clay); background:color-mix(in srgb,var(--clay) 14%, transparent); }
+  .badge.green{ color:var(--green); background:color-mix(in srgb,var(--green) 13%, transparent); }
+  .badge.gray{ color:var(--sf); background:var(--sl); }
+
+  .privacy{ display:inline-flex; align-items:center; gap:7px; font-size:12px; font-weight:600;
+    color:var(--green); background:color-mix(in srgb,var(--green) 12%, transparent);
+    padding:4px 11px; border-radius:999px; white-space:nowrap; }
+  .privacy::before{ content:""; width:7px; height:7px; border-radius:50%; background:var(--green); }
+
+  /* ============ A · moduskeuze (onboarding) ============ */
+  .choicebody{ padding:26px 26px 22px; }
+  .choicehead{ text-align:center; margin:0 0 20px; }
+  .choicehead h3{ font-size:20px; letter-spacing:-.015em; margin:0 0 6px; }
+  .choicehead p{ font-size:13.5px; color:var(--sm); margin:0; text-wrap:pretty; }
+  .modes{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media (max-width:640px){ .modes{ grid-template-columns:1fr; } }
+  .mode{ background:var(--sunken); border-radius:14px; padding:14px; box-shadow:0 0 0 .5px var(--sl);
+    display:flex; flex-direction:column; gap:12px; position:relative; }
+  .mode.sel{ background:var(--ss); box-shadow:0 0 0 1.5px var(--clay), 0 10px 26px -18px var(--shadow); }
+  .mode .check{ position:absolute; top:12px; right:12px; width:20px; height:20px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; }
+  .mode.sel .check{ background:var(--clay); color:#fff; }
+  .mode:not(.sel) .check{ box-shadow:inset 0 0 0 1.5px var(--slx); color:transparent; }
+
+  /* mini-scenes: wat elke modus op je scherm betekent */
+  .scene{ height:118px; border-radius:10px; position:relative; overflow:hidden;
+    background:linear-gradient(150deg,var(--desk1),var(--desk2)); box-shadow:inset 0 0 0 .5px var(--sl); }
+  .scene .mbar{ position:absolute; top:0; left:0; right:0; height:15px; background:var(--ss);
+    border-bottom:.5px solid var(--sl); display:flex; align-items:center; justify-content:flex-end;
+    gap:7px; padding:0 8px; }
+  .scene .mbar .bars{ height:8px; color:var(--si); } .scene .mbar .bars i{ width:1.6px; }
+  .scene .mbar .tt{ font-size:7.5px; color:var(--sf); letter-spacing:.02em; }
+  .scene .caret{ position:absolute; width:1.5px; height:16px; background:var(--si); opacity:.4;
+    left:37%; top:56px; }
+  .scene .spill{ position:absolute; left:calc(37% - 24px); top:78px; width:48px; height:16px; border-radius:8px;
+    background:rgba(30,30,34,.94); display:flex; align-items:center; justify-content:center; gap:2.5px;
+    box-shadow:0 4px 10px rgba(20,18,30,.3), inset 0 0 0 .5px rgba(255,255,255,.14); }
+  .scene .spill i{ width:2.2px; border-radius:2px; background:#f0f0f2; }
+  .scene .spill i:nth-child(1){ height:4px; } .scene .spill i:nth-child(2){ height:8px; }
+  .scene .spill i:nth-child(3){ height:6px; }  .scene .spill i:nth-child(4){ height:9px; }
+  .scene .spill i:nth-child(5){ height:5px; }
+  .scene .swin{ position:absolute; left:14%; right:26%; top:30px; bottom:30px; border-radius:7px;
+    background:var(--ss); box-shadow:0 0 0 .5px var(--slx), 0 10px 22px -12px var(--shadow); overflow:hidden; }
+  .scene .swin .stb{ height:9px; background:var(--titlebar); border-bottom:.5px solid var(--sl);
+    display:flex; align-items:center; gap:2.5px; padding:0 5px; }
+  .scene .swin .stb b{ width:3.5px; height:3.5px; border-radius:50%; display:block; }
+  .scene .swin .stb b:nth-child(1){ background:#FF5F57; } .scene .swin .stb b:nth-child(2){ background:#FEBC2E; }
+  .scene .swin .stb b:nth-child(3){ background:#28C840; }
+  .scene .swin .srow{ height:4px; border-radius:2px; background:var(--sl); margin:5px 6px 0; }
+  .scene .swin .srow.w1{ width:52%; } .scene .swin .srow.w2{ width:72%; margin-top:4px; } .scene .swin .srow.w3{ width:38%; margin-top:4px; }
+  .scene .dock{ position:absolute; left:50%; transform:translateX(-50%); bottom:6px; height:22px; border-radius:7px;
+    background:color-mix(in srgb,var(--ss) 62%, transparent); backdrop-filter:blur(3px);
+    box-shadow:inset 0 0 0 .5px var(--sl); display:flex; align-items:center; gap:5px; padding:0 6px; }
+  .scene .dock b{ width:14px; height:14px; border-radius:4px; display:block; background:var(--slx); }
+  .scene .dock b.sf{ background:linear-gradient(160deg,#2c2c31,#17171b); display:flex; align-items:center;
+    justify-content:center; }
+  .scene .dock b.sf .bars{ height:7px; color:#f0f0f2; } .scene .dock b.sf .bars i{ width:1.4px; }
+
+  .mode .mhead{ display:flex; align-items:baseline; gap:9px; }
+  .mode .mhead h4{ font-size:15.5px; margin:0; letter-spacing:-.01em; }
+  .mode .mhead .sub{ font-size:12px; color:var(--sm); }
+  .mode ul{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:5px; }
+  .mode li{ font-size:12.5px; color:var(--sm); padding-left:16px; position:relative; }
+  .mode li::before{ content:""; position:absolute; left:2px; top:.55em; width:5px; height:5px; border-radius:50%;
+    background:var(--sl); }
+  .mode.sel li::before{ background:var(--clay); }
+  .mode li b{ color:var(--si); font-weight:600; }
+
+  .choicefoot{ margin-top:18px; display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; }
+  .choicefoot .hint{ font-size:12px; color:var(--sm); text-wrap:pretty; max-width:46ch; }
+  .choicefoot .hint b{ color:var(--si); }
+  .stepdots{ display:flex; gap:5px; align-items:center; }
+  .stepdots b{ width:6px; height:6px; border-radius:50%; background:var(--slx); display:block; }
+  .stepdots b.on{ background:var(--clay); }
+
+  /* ============ B · menubalk + paneel ============ */
+  .menubar{ max-width:860px; margin:0 auto 4px; height:26px; border-radius:8px;
+    background:var(--ss); box-shadow:0 1px 0 var(--sl), 0 8px 24px -18px var(--shadow);
+    display:flex; align-items:center; justify-content:flex-end; gap:16px;
+    padding:0 12px; font-size:12.5px; color:var(--sm); }
+  .menubar .active{ color:var(--si); font-weight:600; display:inline-flex; align-items:center; gap:6px; }
+  .menubar .bars{ height:11px; }
+
+  .panelrow{ display:grid; grid-template-columns:320px 1fr; gap:28px; align-items:start; margin-top:14px; }
+  @media (max-width:720px){ .panelrow{ grid-template-columns:1fr; } }
+  .popwrap{ display:flex; flex-direction:column; align-items:flex-end; padding-right:36px; }
+  .poparrow{ width:16px; height:8px; margin-right:34px; position:relative; overflow:hidden; }
+  .poparrow::after{ content:""; position:absolute; left:3px; top:3px; width:10px; height:10px;
+    background:var(--ss); transform:rotate(45deg); box-shadow:0 0 0 .5px var(--slx); }
+  .pop{ width:300px; background:var(--ss); border-radius:13px; padding:14px 14px 11px;
+    box-shadow:0 0 0 .5px var(--slx), 0 24px 50px -26px var(--shadow); }
+  .pop .phead{ display:flex; align-items:center; gap:9px; margin-bottom:11px; }
+  .pop .phead .bars{ height:14px; color:var(--si); } .pop .phead .bars i{ width:2.8px; }
+  .pop .phead b{ font-size:14px; }
+  .pop .phead .pst{ margin-left:auto; display:inline-flex; align-items:center; gap:6px;
+    font-size:11.5px; color:var(--sm); }
+  .pop .phead .pst::before{ content:""; width:7px; height:7px; border-radius:50%; background:var(--green); }
+  .pop .plabel{ font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--sf);
+    font-weight:700; margin:0 0 5px 2px; }
+  .pop .sunkenb{ background:var(--sunken); border-radius:9px; padding:9px 11px; box-shadow:inset 0 0 0 .5px var(--sl); }
+  .pop .sunkenb p{ font-size:12px; color:var(--si); margin:0; line-height:1.45;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .pop .sunkenb .meta{ display:flex; justify-content:space-between; margin-top:6px; font-size:10.5px; color:var(--sf); }
+  .pop .sunkenb .meta a{ color:var(--clay); font-weight:600; text-decoration:none; }
+  .pop .prow{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:7px 2px; }
+  .pop .prow .plbl{ font-size:12.5px; }
+  .pop .psep{ height:.5px; background:var(--sl); margin:7px -2px; }
+  .pop .pact{ display:flex; align-items:center; gap:9px; padding:7px 2px; font-size:12.5px; font-weight:500;
+    color:var(--si); border-radius:7px; }
+  .pop .pact .ic{ width:15px; height:15px; flex:0 0 auto; display:block; color:var(--sf); }
+  .pop .pact.open{ color:var(--clay); font-weight:600; } .pop .pact.open .ic{ color:var(--clay); }
+  .pop .pfoot{ margin-top:6px; padding-top:8px; border-top:.5px solid var(--sl);
+    display:flex; justify-content:space-between; font-size:10.5px; color:var(--sf); }
+
+  .asidecard{ background:var(--ss); border-radius:14px; padding:18px 20px; box-shadow:0 0 0 .5px var(--sl); }
+  .asidecard h3{ font-size:15px; margin:0 0 8px; letter-spacing:-.01em; }
+  .asidecard p{ font-size:13px; color:var(--sm); margin:0 0 10px; text-wrap:pretty; }
+  .asidecard p b{ color:var(--si); }
+  .asidecard p:last-child{ margin-bottom:0; }
+
+  /* ============ hoofdvenster met zijbalk ============ */
+  .app{ display:flex; min-width:720px; min-height:430px; background:var(--ss); }
+  .side{ width:176px; flex:0 0 auto; background:var(--sidebg); border-right:.5px solid var(--sl);
+    padding:14px 10px 12px; display:flex; flex-direction:column; gap:2px; }
+  .side .smark{ display:flex; align-items:center; gap:8px; padding:2px 10px 12px; }
+  .side .smark .tile{ width:24px; height:24px; border-radius:7px; background:linear-gradient(160deg,#2c2c31,#17171b);
+    display:flex; align-items:center; justify-content:center; flex:0 0 auto;
+    box-shadow:inset 0 0 0 .5px rgba(255,255,255,.09); }
+  .side .smark .tile .bars{ height:11px; color:#f0f0f2; } .side .smark .tile .bars i{ width:2px; }
+  .side .smark b{ font-size:13.5px; letter-spacing:-.01em; }
+  .nit{ display:flex; align-items:center; gap:9px; padding:6.5px 10px; border-radius:8px;
+    font-size:13px; font-weight:500; color:var(--sm); }
+  .nit .ic{ width:16px; height:16px; flex:0 0 auto; display:block; color:var(--sf); }
+  .nit.on{ background:var(--chip); color:var(--si); font-weight:600; }
+  .nit.on .ic{ color:var(--clay); }
+  .side .spacer{ flex:1; }
+  .side .sfoot{ padding:8px 10px 0; border-top:.5px solid var(--sl); display:flex; flex-direction:column; gap:3px; }
+  .side .sfoot .st{ display:flex; align-items:center; gap:7px; font-size:11px; color:var(--sm); }
+  .side .sfoot .st::before{ content:""; width:6px; height:6px; border-radius:50%; background:var(--green); flex:0 0 auto; }
+  .side .sfoot .vv{ font-size:10.5px; color:var(--sf); margin-top:3px; }
+
+  .main{ flex:1 1 auto; min-width:0; padding:20px 24px 22px; }
+  .mainhead{ display:flex; align-items:baseline; gap:12px; margin:0 0 4px; }
+  .mainhead h3{ font-size:19px; letter-spacing:-.015em; margin:0; }
+  .mainhead .date{ font-size:12px; color:var(--sf); margin-left:auto; }
+  .mainsub{ font-size:12.5px; color:var(--sm); margin:0 0 16px; }
+  .mainsub b{ color:var(--si); }
+
+  /* signature-hero: grafiet-band in de taal van de pill — in licht én donker gelijk */
+  .hero{ position:relative; border-radius:14px; overflow:hidden; padding:18px 20px 16px; margin-bottom:16px;
+    background:radial-gradient(70% 120% at 92% 125%, rgba(198,123,82,.16), transparent 60%),
+               linear-gradient(150deg,#2a2a30,#1a1a1f 60%,#17171b);
+    box-shadow:inset 0 0 0 .5px rgba(255,255,255,.08), 0 14px 28px -24px rgba(20,18,30,.5);
+    color:#f1f1f4; }
+  .hero::after{ content:""; position:absolute; inset:0; background-image:var(--grain);
+    opacity:.04; pointer-events:none; }
+  .hero .hdate{ position:absolute; top:14px; right:18px; font-size:11.5px; color:rgba(241,241,244,.5); }
+  .hero .hgreet{ font-size:13px; font-weight:500; color:rgba(241,241,244,.72); margin:0 0 7px; }
+  .hero .hstat{ font-size:30px; font-weight:650; letter-spacing:-.025em; line-height:1.05; margin:0 0 14px; }
+  .hero .hstat span{ font-size:14px; font-weight:500; letter-spacing:0; color:rgba(241,241,244,.62); margin-left:7px; }
+  .hchips{ display:flex; gap:16px; flex-wrap:wrap; position:relative; }
+  .hchips .st{ display:inline-flex; align-items:center; gap:7px; font-size:11.5px; color:rgba(241,241,244,.72); }
+  .hchips .st b{ color:#f1f1f4; font-weight:600; }
+  .hchips .st::before{ content:""; width:6.5px; height:6.5px; border-radius:50%; background:var(--green); }
+  /* het merkteken, stil rechtsonder in de band — geen sier-waveform */
+  .hero .hmark{ position:absolute; right:20px; bottom:16px; height:20px; gap:3px; color:rgba(240,240,242,.28); }
+  .hero .hmark i{ width:3.5px; }
+
+  /* stat-tegels */
+  .stats{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:16px; }
+  @media (max-width:860px){ .winscroll .stats{ grid-template-columns:repeat(4,1fr); } }
+  .stat{ background:var(--sunken); border-radius:12px; padding:12px 14px; box-shadow:inset 0 0 0 .5px var(--sl); }
+  .stat .lbl{ font-size:10.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--sf);
+    font-weight:700; margin:0 0 5px; }
+  .stat .val{ font-size:22px; font-weight:600; letter-spacing:-.02em; line-height:1.1; }
+  .stat .sub{ font-size:11px; color:var(--sf); margin-top:4px; }
+  .stat .sub .up{ color:var(--green); font-weight:600; }
+
+  /* week-grafiekje: één reeks, klei; vandaag benadrukt met direct label */
+  .chartcard{ background:var(--sunken); border-radius:12px; padding:13px 16px 11px;
+    box-shadow:inset 0 0 0 .5px var(--sl); margin-bottom:16px; }
+  .chartcard .chead{ display:flex; align-items:baseline; gap:10px; margin-bottom:10px; }
+  .chartcard .chead h4{ font-size:12.5px; margin:0; font-weight:600; }
+  .chartcard .chead span{ font-size:11px; color:var(--sf); margin-left:auto; }
+  .wk{ display:flex; align-items:flex-end; gap:10px; height:84px; }
+  .wk .day{ flex:1 1 0; display:flex; flex-direction:column; align-items:center; gap:0; height:100%;
+    justify-content:flex-end; position:relative; }
+  .wk .bar{ width:100%; max-width:34px; border-radius:4px 4px 0 0; background:var(--clay); opacity:.42; }
+  .wk .day.today .bar{ opacity:1; }
+  .wk .dl{ font-size:10.5px; color:var(--sf); margin-top:6px; }
+  .wk .day.today .dl{ color:var(--si); font-weight:600; }
+  .wk .num{ position:absolute; top:-4px; transform:translateY(-100%); font-size:10.5px; font-weight:600;
+    color:var(--si); font-variant-numeric:tabular-nums; }
+  .wkbase{ height:.5px; background:var(--slx); margin-top:0; }
+
+  /* recente dictaten */
+  .rows{ background:var(--ss); border-radius:12px; overflow:hidden; box-shadow:0 0 0 .5px var(--sl); }
+  .rowshead{ display:flex; align-items:baseline; gap:10px; padding:10px 14px 0; }
+  .rowshead h4{ font-size:12.5px; margin:0; font-weight:600; }
+  .rowshead .side-note{ font-size:11px; color:var(--sf); margin-left:auto; }
+  .drow{ display:flex; align-items:center; gap:12px; padding:10px 14px; }
+  .drow + .drow{ border-top:.5px solid var(--sl); }
+  .drow .tm{ font-family:var(--mono); font-size:11px; color:var(--sf); flex:0 0 44px; }
+  .drow .appc{ font-size:11px; font-weight:600; color:var(--sm); background:var(--chip); border-radius:6px;
+    padding:2px 8px; flex:0 0 auto; }
+  .drow .tx{ flex:1 1 auto; min-width:0; font-size:12.5px; color:var(--si);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .drow .wc{ font-size:11px; color:var(--sf); flex:0 0 auto; font-variant-numeric:tabular-nums; }
+  .drow .btn{ padding:4px 10px; font-size:11.5px; }
+
+  /* ============ D · historie ============ */
+  .histhead{ display:flex; align-items:center; gap:12px; margin-bottom:12px; flex-wrap:wrap; }
+  .search{ flex:1 1 200px; min-width:160px; background:var(--sunken); border-radius:8px; padding:7px 12px;
+    font-size:12.5px; color:var(--sf); box-shadow:inset 0 0 0 .5px var(--sl); }
+  .histmeta{ display:flex; align-items:center; gap:10px; font-size:11.5px; color:var(--sm);
+    margin:0 0 14px; flex-wrap:wrap; }
+  .histmeta a{ color:var(--clay); font-weight:600; text-decoration:none; }
+  .daylbl{ font-size:10.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--sf);
+    font-weight:700; margin:14px 0 6px 2px; }
+  .daylbl:first-of-type{ margin-top:0; }
+
+  .histgrid{ display:grid; grid-template-columns:minmax(0,2.05fr) minmax(240px,1fr); gap:28px; align-items:start; }
+  @media (max-width:880px){ .histgrid{ grid-template-columns:1fr; } }
+
+  /* opt-in dialoog */
+  .optin{ background:var(--ss); border-radius:14px; padding:20px 20px 18px;
+    box-shadow:0 0 0 .5px var(--slx), 0 24px 50px -30px var(--shadow); }
+  .optin h4{ font-size:15px; margin:0 0 6px; letter-spacing:-.01em; }
+  .optin > p{ font-size:12.5px; color:var(--sm); margin:0 0 12px; text-wrap:pretty; }
+  .optin ul{ list-style:none; margin:0 0 16px; padding:0; display:flex; flex-direction:column; gap:7px; }
+  .optin li{ font-size:12px; color:var(--sm); display:flex; gap:8px; align-items:baseline; }
+  .optin li::before{ content:"✓"; color:var(--green); font-weight:700; font-size:11px; }
+  .optin .obtns{ display:flex; gap:8px; justify-content:flex-end; }
+
+  /* ============ E · woordenlijst ============ */
+  .glabel{ font-size:10.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--sf);
+    font-weight:700; margin:16px 0 6px 2px; }
+  .glabel:first-of-type{ margin-top:0; }
+  .glabel .cnt{ text-transform:none; letter-spacing:0; font-weight:500; }
+  .sugrow{ display:flex; align-items:center; gap:12px; padding:10px 14px; }
+  .sugrow + .sugrow{ border-top:.5px solid var(--sl); }
+  .sugrow .term{ font-family:var(--mono); font-size:12.5px; font-weight:600; }
+  .sugrow .freq{ font-size:11px; color:var(--sf); flex:1 1 auto; }
+  .sugrow .btn{ padding:4px 11px; font-size:11.5px; }
+  .chips{ display:flex; flex-wrap:wrap; gap:7px; padding:12px 14px; }
+  .chip{ font-size:12px; font-weight:600; color:var(--si); background:var(--chip); border-radius:999px;
+    padding:4px 12px; box-shadow:0 0 0 .5px var(--sl); }
+  .chip.amb{ background:transparent; color:var(--sm); box-shadow:0 0 0 .5px var(--slx); border:0;
+    outline:1px dashed var(--slx); outline-offset:-3px; }
+  .chip.add{ background:transparent; color:var(--clay); box-shadow:none; }
+  .maprow{ display:flex; align-items:center; gap:10px; padding:9px 14px; font-size:12.5px; }
+  .maprow + .maprow{ border-top:.5px solid var(--sl); }
+  .maprow .src{ font-family:var(--mono); font-size:12px; color:var(--sm); flex:0 0 92px; }
+  .maprow .arr{ color:var(--sf); }
+  .maprow .dst{ font-weight:600; }
+  .maprow .del{ margin-left:auto; color:var(--sf); font-size:12px; }
+
+  /* ============ F · instellingen ============ */
+  .group{ background:var(--sunken); border-radius:12px; overflow:hidden; box-shadow:inset 0 0 0 .5px var(--sl); }
+  .row{ display:flex; align-items:center; gap:14px; padding:10px 14px; min-height:44px; }
+  .row + .row{ border-top:.5px solid var(--sl); }
+  .row .label{ flex:1 1 auto; min-width:0; }
+  .row .label b{ font-size:13px; font-weight:500; display:block; }
+  .row .label span{ font-size:11.5px; color:var(--sm); display:block; margin-top:1px; }
+  .winfoot{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:16px;
+    padding-top:13px; border-top:.5px solid var(--sl); font-size:12px; color:var(--sf); }
+  .winfoot a{ color:var(--clay); text-decoration:none; font-weight:600; }
+
+  /* compacte modus-schakelaar in instellingen */
+  .modeswitch{ display:flex; gap:10px; padding:12px 14px 6px; }
+  .mopt{ flex:1 1 0; border-radius:10px; padding:10px 12px; background:var(--ss);
+    box-shadow:0 0 0 .5px var(--sl); position:relative; }
+  .mopt.sel{ box-shadow:0 0 0 1.5px var(--clay); }
+  .mopt .mt{ display:flex; align-items:center; gap:8px; margin-bottom:3px; }
+  .mopt .mt b{ font-size:13px; }
+  .mopt .mt .mk{ width:15px; height:15px; border-radius:50%; margin-left:auto; flex:0 0 auto;
+    display:flex; align-items:center; justify-content:center; font-size:9px; font-weight:700; }
+  .mopt.sel .mt .mk{ background:var(--clay); color:#fff; }
+  .mopt:not(.sel) .mt .mk{ box-shadow:inset 0 0 0 1.5px var(--slx); color:transparent; }
+  .mopt p{ font-size:11.5px; color:var(--sm); margin:0; line-height:1.45; }
+  .modenote{ font-size:11.5px; color:var(--sm); padding:2px 14px 12px; text-wrap:pretty; }
+  .modenote b{ color:var(--si); }
+
+  /* ============ G · merk-anker: icoon, wordmark, pill ============ */
+  .lockup{ display:flex; align-items:center; gap:18px; margin:6px 0 26px; }
+  .appicon{ width:66px; height:66px; border-radius:16px; flex:0 0 auto; position:relative; overflow:hidden;
+    display:flex; align-items:center; justify-content:center;
+    background:radial-gradient(85% 75% at 85% 120%, rgba(198,123,82,.26), transparent 58%),
+               linear-gradient(160deg,#2e2e34,#161619);
+    box-shadow:inset 0 0 0 .5px rgba(255,255,255,.1), 0 14px 26px -18px rgba(20,18,30,.55); }
+  .appicon::after{ content:""; position:absolute; inset:0; background-image:var(--grain); opacity:.05; }
+  .appicon .bars{ height:27px; gap:3.5px; color:#f0f0f2; }
+  .appicon .bars i{ width:4.5px; }
+  .wordmark{ font-size:27px; letter-spacing:-.035em; font-weight:440; line-height:1.1; }
+  .wordmark b{ font-weight:760; }
+  .wtag{ font-size:13px; color:var(--sm); margin-top:4px; }
+  .wtag b{ color:var(--si); font-weight:600; }
+  .pillstrip{ margin-top:16px; }
+  .pills{ display:flex; gap:16px; flex-wrap:wrap; }
+  .pillcard{ display:flex; flex-direction:column; align-items:center; gap:8px; }
+  .pillstage{ width:168px; height:64px; border-radius:11px; display:flex; align-items:center; justify-content:center;
+    background:linear-gradient(150deg,var(--desk1),var(--desk2)); box-shadow:inset 0 0 0 .5px var(--sl); }
+  .pill{ width:92px; height:30px; border-radius:15px; background:rgba(30,30,34,.92);
+    display:flex; align-items:center; justify-content:center; gap:5px; box-shadow:var(--pill-shadow); }
+  .pill .b{ width:4.5px; border-radius:2.25px; background:#f0f0f2; transform-origin:center;
+    animation:eq 1.15s ease-in-out infinite; }
+  .pill .b:nth-child(1){ height:11px; } .pill .b:nth-child(2){ height:16px; animation-delay:.13s; }
+  .pill .b:nth-child(3){ height:20px; animation-delay:.26s; } .pill .b:nth-child(4){ height:13px; animation-delay:.06s; }
+  .pill .b:nth-child(5){ height:15px; animation-delay:.19s; }
+  @keyframes eq{ 0%,100%{ transform:scaleY(.55); } 50%{ transform:scaleY(1); } }
+  .pill .d{ width:6.5px; height:6.5px; border-radius:50%; background:#f0f0f2; animation:pulse 1.05s ease-in-out infinite; }
+  .pill .d:nth-child(2){ animation-delay:.14s; } .pill .d:nth-child(3){ animation-delay:.28s; }
+  @keyframes pulse{ 0%,100%{ opacity:.28; transform:scale(.72); } 50%{ opacity:1; transform:scale(1); } }
+  .pill svg{ width:18px; height:18px; overflow:visible; }
+  .pill svg path{ fill:none; stroke:var(--green); stroke-width:2.4; stroke-linecap:round; stroke-linejoin:round; }
+  .pilllabel{ font-size:11.5px; color:var(--sm); }
+
+  @media (prefers-reduced-motion:reduce){ *{ animation:none !important; transition:none !important; } }
+
+  .foot{ text-align:center; margin-top:52px; font-size:12px; color:var(--sf); }
+</style>
+
+<div class="wrap">
+
+  <!-- iconenfamilie: één lijndikte (1.5), ronde uiteinden, allemaal in de staafjes-taal -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="i-eq" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+        <path d="M3.75 6.7v4.6M7.25 4.9v8.2M10.75 3.5v11M14.25 5.8v6.4"/>
+      </symbol>
+      <symbol id="i-hist" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+        <path d="M3 5.2h12M3 9h9.2M3 12.8h6"/>
+      </symbol>
+      <symbol id="i-woord" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 14 9 4l5 10M5.95 10.3h6.1"/>
+      </symbol>
+      <symbol id="i-inst" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+        <path d="M3 5h5.4M13.6 5H15M7.8 9H15M3 13h6.6"/>
+        <circle cx="11" cy="5" r="1.9"/><circle cx="5.2" cy="9" r="1.9"/><circle cx="12.2" cy="13" r="1.9"/>
+      </symbol>
+      <symbol id="i-open" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3.2" y="4" width="11.6" height="10" rx="2.2"/><path d="M3.2 7.2h11.6"/>
+      </symbol>
+      <symbol id="i-update" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M15 9a6 6 0 1 1-1.76-4.24"/><path d="M15 3.6v2.9h-2.9"/>
+      </symbol>
+    </defs>
+  </svg>
+
+  <div class="lede">
+    <p class="eyebrow">SamFlow · app-interface</p>
+    <h1>Eén app, twee manieren van aanwezig zijn</h1>
+    <p>SamFlow blijft wat het is: Fn indrukken, praten, loslaten — geplakt. Nieuw is de keuze <b>hoe
+    aanwezig</b> de app daarbij mag zijn: als onzichtbaar hulpje in de menubalk (<b>Basic</b>), of als
+    volwaardige app met venster en dock-icoon (<b>App</b>). Hieronder de hele interface, ter beoordeling —
+    geen functionele code.</p>
+  </div>
+
+  <div class="themebar" role="group" aria-label="Thema">
+    <span class="seg" id="themeseg">
+      <button data-t="" class="on">Systeem</button>
+      <button data-t="light">Licht</button>
+      <button data-t="dark">Donker</button>
+    </span>
+  </div>
+
+  <!-- ============================================================ A · DE KEUZE ============================================================ -->
+  <h2 class="sec">A · De keuze — laatste stap van de onboarding</h2>
+  <p class="lead">Geen instelling-tussen-de-instellingen, maar <b>één duidelijke vraag met twee plaatjes</b>.
+    Elke kaart toont letterlijk wat je scherm ermee doet: bij Basic alleen de menubalk en de pill, bij App
+    ook een venster en een dock-icoon. Basic is voorgeselecteerd — dat is hoe SamFlow nu werkt.</p>
+
+  <div class="winscroll"><div class="win" style="max-width:680px; margin:0 auto; min-width:560px;">
+    <div class="titlebar">
+      <span class="lights"><span class="r"></span><span class="y"></span><span class="g"></span></span>
+      <p class="wintitle">Welkom</p>
+    </div>
+    <div class="choicebody">
+      <div class="choicehead">
+        <h3>Hoe aanwezig mag SamFlow zijn?</h3>
+        <p>Beide modi dicteren precies hetzelfde. Dit gaat alleen over wat je van de app <em>ziet</em>.</p>
+      </div>
+
+      <div class="modes">
+        <div class="mode sel">
+          <span class="check">✓</span>
+          <div class="scene" aria-hidden="true">
+            <div class="mbar"><span class="bars"><i></i><i></i><i></i><i></i></span><span class="tt">14:22</span></div>
+            <span class="caret"></span>
+            <span class="spill"><i></i><i></i><i></i><i></i><i></i></span>
+          </div>
+          <div class="mhead"><h4>Basic</h4><span class="sub">zoals nu</span><span class="badge clay" style="margin-left:auto; margin-right:26px;">aanrader</span></div>
+          <ul>
+            <li><b>Alleen menubalk + pill.</b> Geen venster, geen dock-icoon.</li>
+            <li>Instellingen en status zitten in het menubalk-paneel.</li>
+            <li>Het volledige venster blijft één klik weg — via dat paneel.</li>
+          </ul>
+        </div>
+
+        <div class="mode">
+          <span class="check">✓</span>
+          <div class="scene" aria-hidden="true">
+            <div class="mbar"><span class="bars"><i></i><i></i><i></i><i></i></span><span class="tt">14:22</span></div>
+            <div class="swin"><div class="stb"><b></b><b></b><b></b></div>
+              <div class="srow w1"></div><div class="srow w2"></div><div class="srow w3"></div></div>
+            <div class="dock"><b></b><b></b><b class="sf"><span class="bars"><i></i><i></i><i></i><i></i></span></b><b></b></div>
+          </div>
+          <div class="mhead"><h4>App</h4><span class="sub">de volle ervaring</span></div>
+          <ul>
+            <li><b>Echt hoofdvenster</b> met overzicht, historie en woordenlijst.</li>
+            <li>Dock-icoon en ⌘Tab, zoals elke andere app.</li>
+            <li>Zelfde dicteer-ervaring — Fn, pill, plakken.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="choicefoot">
+        <span class="hint"><b>Wisselen kan altijd</b>, in Instellingen. En in beide modi geldt hetzelfde:
+          alles blijft op deze Mac.</span>
+        <span style="display:flex; align-items:center; gap:16px;">
+          <span class="stepdots" aria-label="Stap 4 van 4"><b></b><b></b><b></b><b class="on"></b></span>
+          <button class="btn primary">Klaar — begin met dicteren</button>
+        </span>
+      </div>
+    </div>
+  </div></div>
+  <p class="cap"><b>Onboarding, stap 4 (na de rechten-stappen uit de bestaande wizard).</b> De vraag is bewust
+    geen feature-lijst maar een identiteitsvraag: "hoe aanwezig mag SamFlow zijn?" — met de mini-scènes als
+    antwoord, zodat niemand hoeft te raden wat "Basic" betekent. Basic staat voorgeselecteerd (het huidige
+    gedrag als verstandige default), en de regel eronder haalt de angel eruit: de keuze is omkeerbaar en
+    verandert niets aan de privacy-belofte.</p>
+
+  <!-- ============================================================ B · BASIC ============================================================ -->
+  <h2 class="sec">B · Basic-modus — de menubalk is de hele app</h2>
+  <p class="lead">In Basic bestaat SamFlow uit het menubalk-icoon, dit paneel en de pill. Nieuw is één rij:
+    <b>"Open SamFlow…"</b> — de brug naar het volledige venster, zonder van modus te wisselen.</p>
+
+  <div class="menubar" aria-hidden="true">
+    <span>Wi-Fi</span>
+    <span>100%</span>
+    <span class="active"><span class="bars"><i></i><i></i><i></i><i></i></span> SamFlow</span>
+    <span>vr 17 jul&nbsp;&nbsp;14:22</span>
+  </div>
+
+  <div class="panelrow">
+    <div class="popwrap">
+      <div class="poparrow"></div>
+      <div class="pop">
+        <div class="phead">
+          <span class="bars"><i></i><i></i><i></i><i></i></span><b>SamFlow</b>
+          <span class="pst">Klaar · model warm</span>
+        </div>
+
+        <p class="plabel">Laatste dictaat</p>
+        <div class="sunkenb">
+          <p>Goedemiddag Ellen, dank voor je snelle reactie. Ik zet de export van MarketOS vanmiddag voor je klaar.</p>
+          <div class="meta"><span>14:19 · 21 woorden · 0,6 s</span><a href="#">Kopieer</a></div>
+        </div>
+
+        <div class="psep"></div>
+        <div class="prow"><span class="plbl">Geluiden</span><span class="sw on"></span></div>
+        <div class="prow"><span class="plbl">Media pauzeren</span><span class="sw on"></span></div>
+        <div class="prow"><span class="plbl">Automatisch bijwerken</span><span class="sw on"></span></div>
+
+        <div class="psep"></div>
+        <div class="pact open"><svg class="ic" aria-hidden="true"><use href="#i-open"/></svg>Open SamFlow…</div>
+        <div class="pact"><svg class="ic" aria-hidden="true"><use href="#i-update"/></svg>Controleer op updates</div>
+
+        <div class="pfoot"><span>SamFlow · 1.2.0</span><span>Basic-modus</span></div>
+      </div>
+    </div>
+
+    <div class="asidecard">
+      <h3>Waarom Basic geen "uitgeklede" versie is</h3>
+      <p>Basic verbergt de app, niet de functies. Dicteren, woordenlijst, model en updates werken identiek;
+        alleen venster en dock-icoon blijven weg.</p>
+      <p><b>"Open SamFlow…" is de veiligheidsklep.</b> Wie in Basic tóch de historie of woordenlijst wil zien,
+        opent het hoofdvenster tijdelijk vanuit het paneel. Venster dicht = weer onzichtbaar. Zo is de
+        moduskeuze nooit een deur die op slot gaat — en hoeft niemand "voor de zekerheid" App te kiezen.</p>
+    </div>
+  </div>
+  <p class="cap"><b>Het bestaande paneel uit <code>panel.py</code>, plus één rij.</b> Status, laatste dictaat
+    en de drie toggles staan er al; de klei-gekleurde rij "Open SamFlow…" is de enige toevoeging. De voetregel
+    benoemt de actieve modus, zodat het gedrag ("waarom zie ik geen dock-icoon?") altijd verklaarbaar is.</p>
+
+  <!-- ============================================================ C · OVERZICHT ============================================================ -->
+  <h2 class="sec">C · Hoofdvenster — Overzicht</h2>
+  <p class="lead">Het eerste scherm van de App-modus opent met het handtekening-moment: een <b>grafiet-band
+    in de taal van de pill</b> — in licht én donker gelijk, net als de pill zelf — met je dag in één getal
+    en de status in drie groene chips. Daaronder vier rustige cijfers, de week in staafjes, en de laatste
+    dictaten. Meer niet.</p>
+
+  <div class="winscroll"><div class="win">
+    <div class="titlebar">
+      <span class="lights"><span class="r"></span><span class="y"></span><span class="g"></span></span>
+      <p class="wintitle">SamFlow</p>
+    </div>
+    <div class="app">
+      <div class="side">
+        <div class="smark"><span class="tile"><span class="bars"><i></i><i></i><i></i><i></i></span></span><b>SamFlow</b></div>
+        <div class="nit on"><svg class="ic" aria-hidden="true"><use href="#i-eq"/></svg>Overzicht</div>
+        <div class="nit"><svg class="ic" aria-hidden="true"><use href="#i-hist"/></svg>Historie</div>
+        <div class="nit"><svg class="ic" aria-hidden="true"><use href="#i-woord"/></svg>Woordenlijst</div>
+        <div class="nit"><svg class="ic" aria-hidden="true"><use href="#i-inst"/></svg>Instellingen</div>
+        <div class="spacer"></div>
+        <div class="sfoot">
+          <span class="st">Model warm · 0,5 s</span>
+          <span class="vv">1.2.0 · App-modus</span>
+        </div>
+      </div>
+      <div class="main">
+        <div class="hero">
+          <span class="hdate">vrijdag 17 juli</span>
+          <p class="hgreet">Goedemiddag, Sam</p>
+          <div class="hstat">1.240<span>woorden vandaag</span></div>
+          <div class="hchips">
+            <span class="st"><b>Microfoon</b> — MacBook Pro</span>
+            <span class="st"><b>Rechten</b> — toegekend</span>
+            <span class="st"><b>Model</b> — warm, 0,5 s</span>
+          </div>
+          <span class="bars hmark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+        </div>
+
+        <div class="stats">
+          <div class="stat"><p class="lbl">Woorden deze week</p><div class="val">6.140</div>
+            <div class="sub"><span class="up">▲ 12%</span> t.o.v. vorige week</div></div>
+          <div class="stat"><p class="lbl">Tijd bespaard</p><div class="val">≈ 1 u 52 m</div>
+            <div class="sub">t.o.v. typen (40 wpm)</div></div>
+          <div class="stat"><p class="lbl">Snelste dictaat</p><div class="val">0,4 s</div>
+            <div class="sub">van loslaten tot geplakt</div></div>
+          <div class="stat"><p class="lbl">Reeks</p><div class="val">11 dagen</div>
+            <div class="sub">elke werkdag gedicteerd</div></div>
+        </div>
+
+        <div class="chartcard">
+          <div class="chead"><h4>Woorden per dag</h4><span>deze week</span></div>
+          <div class="wk" role="img" aria-label="Staafgrafiek: woorden per dag, maandag 820 tot en met vandaag 1.240">
+            <div class="day"><div class="bar" style="height:52%;"></div><span class="dl">ma</span></div>
+            <div class="day"><div class="bar" style="height:72%;"></div><span class="dl">di</span></div>
+            <div class="day"><div class="bar" style="height:61%;"></div><span class="dl">wo</span></div>
+            <div class="day"><div class="bar" style="height:83%;"></div><span class="dl">do</span></div>
+            <div class="day today"><span class="num">1.240</span><div class="bar" style="height:78%;"></div><span class="dl">vr</span></div>
+            <div class="day"><div class="bar" style="height:16%;"></div><span class="dl">za</span></div>
+            <div class="day"><div class="bar" style="height:26%;"></div><span class="dl">zo</span></div>
+          </div>
+          <div class="wkbase"></div>
+        </div>
+
+        <div class="rows">
+          <div class="rowshead"><h4>Recent</h4><span class="side-note">historie aan · alleen op deze Mac</span></div>
+          <div class="drow"><span class="tm">14:19</span><span class="appc">Mail</span>
+            <span class="tx">Goedemiddag Ellen, dank voor je snelle reactie. Ik zet de export van MarketOS vanmiddag…</span>
+            <span class="wc">21 w</span><button class="btn">Kopieer</button></div>
+          <div class="drow"><span class="tm">13:47</span><span class="appc">Slack</span>
+            <span class="tx">Kan iemand vandaag nog even naar de Klaviyo-flow kijken voordat die live gaat?</span>
+            <span class="wc">14 w</span><button class="btn">Kopieer</button></div>
+          <div class="drow"><span class="tm">11:02</span><span class="appc">Notities</span>
+            <span class="tx">Ideeën voor de afstudeerpresentatie: begin met het probleem, niet met de oplossing…</span>
+            <span class="wc">46 w</span><button class="btn">Kopieer</button></div>
+        </div>
+      </div>
+    </div>
+  </div></div>
+  <p class="cap"><b>Dashboard.</b> De grafiet-band is het enige merk-moment van het scherm en verdient die rol:
+    grafiet is de constante van SamFlow (de pill verandert ook nooit van kleur met het thema), met een hint
+    klei in de hoek en het merkteken stil rechtsonder — geen sier-waveform. De zijbalk navigeert met een eigen
+    iconenfamilie in de staafjes-taal: stem is verticaal (Overzicht), tekst is horizontaal (Historie), en de
+    schuifjes van Instellingen zijn diezelfde staafjes met een knop. De statistieken blijven "af te lezen in
+    twee seconden": één staafgrafiekje in klei waarvan alleen vandáág een getal draagt.</p>
+
+  <!-- ============================================================ D · HISTORIE ============================================================ -->
+  <h2 class="sec">D · Historie — nieuw, lokaal en opt-in</h2>
+  <p class="lead">Nu onthoudt SamFlow alleen het laatste dictaat, in het geheugen. Historie is dus een
+    <b>bewuste stap</b>: standaard uit, en pas na de vraag rechts blijft er iets bewaard — als gewoon bestand
+    op deze Mac, nooit ergens anders.</p>
+
+  <div class="histgrid">
+    <div class="winscroll"><div class="win" style="min-width:600px;">
+      <div class="titlebar">
+        <span class="lights"><span class="r"></span><span class="y"></span><span class="g"></span></span>
+        <p class="wintitle">SamFlow</p>
+      </div>
+      <div class="app" style="min-width:600px; min-height:0;">
+        <div class="side">
+          <div class="smark"><span class="tile"><span class="bars"><i></i><i></i><i></i><i></i></span></span><b>SamFlow</b></div>
+          <div class="nit"><svg class="ic" aria-hidden="true"><use href="#i-eq"/></svg>Overzicht</div>
+          <div class="nit on"><svg class="ic" aria-hidden="true"><use href="#i-hist"/></svg>Historie</div>
+          <div class="nit"><svg class="ic" aria-hidden="true"><use href="#i-woord"/></svg>Woordenlijst</div>
+          <div class="nit"><svg class="ic" aria-hidden="true"><use href="#i-inst"/></svg>Instellingen</div>
+          <div class="spacer"></div>
+          <div class="sfoot"><span class="st">Model warm · 0,5 s</span><span class="vv">1.2.0 · App-modus</span></div>
+        </div>
+        <div class="main">
+          <div class="histhead">
+            <h3 style="font-size:19px; letter-spacing:-.015em; margin:0;">Historie</h3>
+            <span class="privacy">Alleen op deze Mac</span>
+            <span class="search">Zoek in dictaten…</span>
+          </div>
+          <p class="histmeta">Aan · bewaart 30 dagen, daarna vanzelf weg · <a href="#">Wis alles</a> · <a href="#">Zet uit</a></p>
+
+          <p class="daylbl">Vandaag</p>
+          <div class="rows">
+            <div class="drow"><span class="tm">14:19</span><span class="appc">Mail</span>
+              <span class="tx">Goedemiddag Ellen, dank voor je snelle reactie. Ik zet de export van MarketOS…</span>
+              <span class="wc">21 w · 0,6 s</span><button class="btn">Kopieer</button><button class="btn ghost">Wis</button></div>
+            <div class="drow"><span class="tm">13:47</span><span class="appc">Slack</span>
+              <span class="tx">Kan iemand vandaag nog even naar de Klaviyo-flow kijken voordat die live gaat?</span>
+              <span class="wc">14 w · 0,5 s</span><button class="btn">Kopieer</button><button class="btn ghost">Wis</button></div>
+            <div class="drow"><span class="tm">11:02</span><span class="appc">Notities</span>
+              <span class="tx">Ideeën voor de afstudeerpresentatie: begin met het probleem, niet met de oplossing…</span>
+              <span class="wc">46 w · 1,1 s</span><button class="btn">Kopieer</button><button class="btn ghost">Wis</button></div>
+          </div>
+
+          <p class="daylbl">Gisteren</p>
+          <div class="rows">
+            <div class="drow"><span class="tm">16:31</span><span class="appc">Safari</span>
+              <span class="tx">Retourbeleid: klanten kunnen binnen dertig dagen retourneren zonder opgaaf van reden…</span>
+              <span class="wc">62 w · 1,4 s</span><button class="btn">Kopieer</button><button class="btn ghost">Wis</button></div>
+            <div class="drow"><span class="tm">09:12</span><span class="appc">Mail</span>
+              <span class="tx">Beste Thomas, hierbij de planning voor volgende week zoals besproken…</span>
+              <span class="wc">85 w · 1,8 s</span><button class="btn">Kopieer</button><button class="btn ghost">Wis</button></div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+
+    <div>
+      <div class="optin">
+        <h4>Dictaten bewaren op deze Mac?</h4>
+        <p>Dan kun je ze later teruglezen, doorzoeken en opnieuw kopiëren.</p>
+        <ul>
+          <li>Een leesbaar bestand op je eigen schijf — geen cloud, geen netwerk</li>
+          <li>Bewaart 30 dagen, daarna vanzelf weg</li>
+          <li>Uitzetten of alles wissen kan altijd, met één klik</li>
+        </ul>
+        <div class="obtns">
+          <button class="btn">Niet bewaren</button>
+          <button class="btn primary">Bewaar lokaal</button>
+        </div>
+      </div>
+      <p class="cap" style="margin-top:10px;"><b>De opt-in-vraag</b> — verschijnt één keer, bij het eerste
+        bezoek aan Historie. Zolang je niet kiest, wordt er niets bewaard.</p>
+    </div>
+  </div>
+  <p class="cap"><b>Historie-scherm.</b> De privacy-belofte is geen voetnoot maar onderdeel van de kop: de
+    groene badge "Alleen op deze Mac" en de regel met bewaartermijn, "Wis alles" en "Zet uit" staan permanent
+    bovenaan. Elke rij toont wáár de tekst is geplakt (app-chip), hoeveel woorden en hoe snel — dezelfde taal
+    als het dashboard. <span class="new">Nieuw t.o.v. de huidige app</span>, die bewust alleen het laatste
+    dictaat in het geheugen houdt.</p>
+
+  <!-- ============================================================ E · WOORDENLIJST ============================================================ -->
+  <h2 class="sec">E · Woordenlijst — de leer-loop met een gezicht</h2>
+  <p class="lead">SamFlow telt nu al onbekende woorden die je vaak zegt (<code>--review</code>). Dit scherm is
+    diezelfde loop, maar zichtbaar: <b>voorstellen bovenaan, jouw termen en correcties eronder</b>. Niets
+    wordt automatisch toegevoegd — jij beslist.</p>
+
+  <div class="winscroll"><div class="win">
+    <div class="titlebar">
+      <span class="lights"><span class="r"></span><span class="y"></span><span class="g"></span></span>
+      <p class="wintitle">SamFlow</p>
+    </div>
+    <div class="app">
+      <div class="side">
+        <div class="smark"><span class="tile"><span class="bars"><i></i><i></i><i></i><i></i></span></span><b>SamFlow</b></div>
+        <div class="nit"><svg class="ic" aria-hidden="true"><use href="#i-eq"/></svg>Overzicht</div>
+        <div class="nit"><svg class="ic" aria-hidden="true"><use href="#i-hist"/></svg>Historie</div>
+        <div class="nit on"><svg class="ic" aria-hidden="true"><use href="#i-woord"/></svg>Woordenlijst</div>
+        <div class="nit"><svg class="ic" aria-hidden="true"><use href="#i-inst"/></svg>Instellingen</div>
+        <div class="spacer"></div>
+        <div class="sfoot"><span class="st">Model warm · 0,5 s</span><span class="vv">1.2.0 · App-modus</span></div>
+      </div>
+      <div class="main">
+        <div class="mainhead"><h3>Woordenlijst</h3></div>
+        <p class="mainsub">Wordt bij elk dictaat opnieuw gelezen — een woord toevoegen werkt <b>meteen</b>, zonder herstart.</p>
+
+        <p class="glabel">Voorstellen <span class="cnt">· vaak gezegd, nog onbekend</span></p>
+        <div class="rows">
+          <div class="sugrow"><span class="term">klavijo</span><span class="freq">6× gehoord deze week</span>
+            <button class="btn">Corrigeer naar…</button><button class="btn ghost">Negeer</button></div>
+          <div class="sugrow"><span class="term">wispr</span><span class="freq">3× gehoord deze week</span>
+            <button class="btn">Voeg toe</button><button class="btn ghost">Negeer</button></div>
+        </div>
+
+        <p class="glabel">Eigen termen <span class="cnt">· 12 — altijd in de juiste vorm geplakt</span></p>
+        <div class="rows">
+          <div class="chips">
+            <span class="chip">MarketOS</span>
+            <span class="chip">Klaviyo</span>
+            <span class="chip">Shopify</span>
+            <span class="chip">Wispr Flow</span>
+            <span class="chip">SamFlow</span>
+            <span class="chip">Kloeth</span>
+            <span class="chip amb">meta · ook gewoon woord</span>
+            <span class="chip add">+ Nieuwe term</span>
+          </div>
+        </div>
+
+        <p class="glabel">Fonetische correcties <span class="cnt">· als Whisper er net naast zit</span></p>
+        <div class="rows">
+          <div class="maprow"><span class="src">klavijo</span><span class="arr">→</span><span class="dst">Klaviyo</span><a class="del" href="#">wis</a></div>
+          <div class="maprow"><span class="src">sjopify</span><span class="arr">→</span><span class="dst">Shopify</span><a class="del" href="#">wis</a></div>
+        </div>
+      </div>
+    </div>
+  </div></div>
+  <p class="cap"><b>Woordenlijst.</b> De drie lagen uit de huidige architectuur, in oplopende zwaarte:
+    voorstellen (de leer-loop van <code>--review</code>), eigen termen (<code>lexicon.txt</code> — corrigeert
+    alleen hoofdletters en splitsing, raakt nooit een ander woord aan) en fonetische correcties
+    (<code>mappings.txt</code>). Termen die óók een gewoon woord zijn, zoals "meta", krijgen een gestippelde
+    chip: ze gaan wel mee in de herkenning, maar worden niet overal met hoofdletter afgedwongen.</p>
+
+  <!-- ============================================================ F · INSTELLINGEN ============================================================ -->
+  <h2 class="sec">F · Instellingen — en de schakelaar terug</h2>
+  <p class="lead">De spiegel van de voorkeuren, gegroepeerd zoals je erover praat. Bovenaan keert de keuze uit
+    de onboarding terug als <b>compacte kaartenschakelaar</b> — zelfde twee opties, zelfde taal, dus meteen
+    herkenbaar.</p>
+
+  <div class="winscroll"><div class="win">
+    <div class="titlebar">
+      <span class="lights"><span class="r"></span><span class="y"></span><span class="g"></span></span>
+      <p class="wintitle">SamFlow</p>
+    </div>
+    <div class="app">
+      <div class="side">
+        <div class="smark"><span class="tile"><span class="bars"><i></i><i></i><i></i><i></i></span></span><b>SamFlow</b></div>
+        <div class="nit"><svg class="ic" aria-hidden="true"><use href="#i-eq"/></svg>Overzicht</div>
+        <div class="nit"><svg class="ic" aria-hidden="true"><use href="#i-hist"/></svg>Historie</div>
+        <div class="nit"><svg class="ic" aria-hidden="true"><use href="#i-woord"/></svg>Woordenlijst</div>
+        <div class="nit on"><svg class="ic" aria-hidden="true"><use href="#i-inst"/></svg>Instellingen</div>
+        <div class="spacer"></div>
+        <div class="sfoot"><span class="st">Model warm · 0,5 s</span><span class="vv">1.2.0 · App-modus</span></div>
+      </div>
+      <div class="main">
+        <div class="mainhead"><h3>Instellingen</h3></div>
+        <p class="mainsub">Elke wijziging werkt direct — geen "Opslaan"-knop.</p>
+
+        <p class="glabel">Weergave</p>
+        <div class="group">
+          <div class="modeswitch">
+            <div class="mopt">
+              <div class="mt"><b>Basic</b><span class="mk">✓</span></div>
+              <p>Alleen menubalk + pill. Geen venster, geen dock-icoon.</p>
+            </div>
+            <div class="mopt sel">
+              <div class="mt"><b>App</b><span class="mk">✓</span></div>
+              <p>Dit venster, dock-icoon en ⌘Tab erbij.</p>
+            </div>
+          </div>
+          <p class="modenote">Kies je Basic, dan sluit dit venster en verdwijnt het dock-icoon.
+            <b>Terugkomen kan altijd</b> via "Open SamFlow…" in het menubalk-paneel.</p>
+          <div class="row">
+            <div class="label"><b>Start bij inloggen</b></div>
+            <span class="sw on"></span>
+          </div>
+        </div>
+
+        <p class="glabel">Dicteren</p>
+        <div class="group">
+          <div class="row">
+            <div class="label"><b>Taal</b></div>
+            <span class="segc"><span class="sel">Nederlands</span><span>English</span><span>Auto</span></span>
+          </div>
+          <div class="row">
+            <div class="label"><b>Model</b><span>Wisselen herstart de transcriptie-service even</span></div>
+            <span class="drop">Large v3 Turbo (q8) — aanrader <span class="chev">▾</span></span>
+          </div>
+          <div class="row">
+            <div class="label"><b>Sneltoets</b><span>Ingedrukt houden = opnemen</span></div>
+            <span class="keycap">fn</span>
+          </div>
+          <div class="row">
+            <div class="label"><b>Vastzetten</b><span>Hands-free opnemen zonder Fn vast te houden</span></div>
+            <span class="segc"><span>Uit</span><span>Tik</span><span class="sel">Dubbel-tik</span><span>Fn+⌘</span></span>
+          </div>
+        </div>
+
+        <p class="glabel">Pill</p>
+        <div class="group">
+          <div class="row">
+            <div class="label"><b>Positie</b></div>
+            <span class="drop">Bij de tekstcursor <span class="chev">▾</span></span>
+          </div>
+          <div class="row">
+            <div class="label"><b>Grootte</b></div>
+            <span class="segc"><span class="sel">Compact</span><span>Mini</span></span>
+          </div>
+          <div class="row">
+            <div class="label"><b>Beweging</b></div>
+            <span class="segc"><span class="sel">Soepel</span><span>Kwiek</span></span>
+          </div>
+        </div>
+
+        <p class="glabel">Gedrag</p>
+        <div class="group">
+          <div class="row">
+            <div class="label"><b>Geluiden</b><span>Zachte klik bij start, stop en klaar</span></div>
+            <span class="sw on"></span>
+          </div>
+          <div class="row">
+            <div class="label"><b>Media pauzeren</b><span>Muziek stopt tijdens het dictaat en gaat daarna verder</span></div>
+            <span class="sw on"></span>
+          </div>
+          <div class="row">
+            <div class="label"><b>Automatisch bijwerken</b><span>Haalt nieuwe versies van GitHub op</span></div>
+            <span class="sw on"></span>
+          </div>
+          <div class="row">
+            <div class="label"><b>Automatisch herstarten</b><span>Na een update, op een rustig moment</span></div>
+            <span class="sw on"></span>
+          </div>
+        </div>
+
+        <div class="winfoot">
+          <span>SamFlow 1.2.0 · lokaal &amp; open source</span>
+          <a href="#">Controleer op updates</a>
+        </div>
+      </div>
+    </div>
+  </div></div>
+  <p class="cap"><b>Instellingen.</b> De Basic/App-schakelaar staat bovenaan onder "Weergave" — als twee
+    mini-kaarten in plaats van een kale toggle, zodat de betekenis (venster + dock erbij of niet) op de plek
+    van de keuze zelf staat. De zin eronder beschrijft precies wat er gebeurt als je overschakelt, inclusief
+    de weg terug. Verder: groene toggles voor aan/uit, klei alleen voor keuze en actie, en dezelfde
+    rij-anatomie als het bestaande voorkeuren-venster.</p>
+
+  <!-- ============================================================ G · ANKER ============================================================ -->
+  <h2 class="sec">G · Het anker — icoon, wordmark en de pill</h2>
+  <p class="lead">Het merk in drie lagen, allemaal uit hetzelfde motief: het app-icoon (grafiet-tegel met de
+    staafjes en een hint klei), de wordmark met gewichtscontrast, en de pill (92 × 30) — die in geen van
+    beide modi verandert: witte staafjes op de echte mic, witte stippen tijdens het transcriberen, een groen
+    vinkje als de tekst is geplakt.</p>
+
+  <div class="lockup">
+    <span class="appicon" aria-hidden="true"><span class="bars"><i></i><i></i><i></i><i></i></span></span>
+    <div>
+      <div class="wordmark"><b>Sam</b>Flow</div>
+      <p class="wtag" style="margin:4px 0 0;"><b>Zeg het maar.</b> Loslaten, en het staat er — 100% op je eigen Mac.</p>
+    </div>
+  </div>
+
+  <div class="pillstrip">
+    <div class="pills">
+      <div class="pillcard">
+        <div class="pillstage"><div class="pill"><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span><span class="b"></span></div></div>
+        <span class="pilllabel">opnemen — beweegt op je échte stem</span>
+      </div>
+      <div class="pillcard">
+        <div class="pillstage"><div class="pill"><span class="d"></span><span class="d"></span><span class="d"></span></div></div>
+        <span class="pilllabel">transcriberen</span>
+      </div>
+      <div class="pillcard">
+        <div class="pillstage"><div class="pill"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12.6 L10 18.4 L20 6.4"/></svg></div></div>
+        <span class="pilllabel">geplakt</span>
+      </div>
+    </div>
+  </div>
+
+  <p class="foot">Mockup ter beoordeling · geen functionele code · SamFlow blijft lokaal &amp; open source</p>
+</div>
+
+<script>
+  (() => {
+    const seg = document.getElementById('themeseg');
+    seg.addEventListener('click', (e) => {
+      const btn = e.target.closest('button'); if (!btn) return;
+      seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === btn));
+      if (btn.dataset.t) document.documentElement.dataset.theme = btn.dataset.t;
+      else delete document.documentElement.dataset.theme;
+    });
+  })();
+</script>
+</body>
+</html>
