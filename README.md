@@ -121,12 +121,46 @@ Other knobs (all near the top of their file): `SILENCE_RMS`, `PREROLL_SEC`,
 
 ---
 
+## Optional: AI polish
+
+By default SamFlow cleans your dictation with fast, deterministic rules (`cleanup.py`):
+capitalisation, punctuation, fillers, your vocabulary. That is instant and never rewrites
+your meaning.
+
+You can optionally add a second pass that turns rambly speech into clean written sentences —
+dropping "uh"/"you know", fixing grammar, resolving self-corrections. It runs a small
+**local** instruct model through [Ollama](https://ollama.com), so it stays private and offline
+like the rest of SamFlow. It is **off by default** and fully opt-in: when off it makes no call
+and uses no extra RAM.
+
+**Setup** — this is *not* installed by `install.sh`; add it yourself only if you want it:
+
+```bash
+brew install ollama          # once (the local model runner)
+ollama pull qwen2.5:3b       # ~1.9 GB — the polish model
+```
+
+Then turn it on in **SamFlow → Preferences → Dictation → "AI-oppoetsen"**. The toggle takes
+effect on your next dictation, no restart.
+
+- **Cost:** ~0.6s extra per dictation once warm, and ~2 GB RAM while the model is loaded.
+  Ollama's `keep_alive` frees that RAM a few minutes after you stop — so if your Mac is tight
+  on memory, just leave the toggle off.
+- **Safety net:** if Ollama isn't running, the model isn't pulled, it times out, or the result
+  drifts too far from the input, SamFlow silently falls back to the rules-based text. The polish
+  can never hang or corrupt a dictation — worst case is the same text you'd get with it off.
+- **Trade-off:** a 3B model is fast but not perfectly faithful on hard cases (mid-sentence
+  self-corrections), which is why it is opt-in. A larger model (`qwen2.5:7b`) is more faithful
+  at ~2s and ~5 GB RAM. Change it via `polish_model` in `settings.json`.
+
+---
+
 ## How it works
 
 ```
-Fn down ─► mic ─► Fn up ─► whisper-server ─► cleanup.py ─► Cmd+V
-          (+0.4s              (warm, ~0.5s)   (vocab +      (clipboard
-           pre-roll)                           rules)        borrow & restore)
+Fn down ─► mic ─► Fn up ─► whisper-server ─► cleanup.py ─► polish.py? ─► Cmd+V
+          (+0.4s              (warm, ~0.5s)   (vocab +      (optional     (clipboard
+           pre-roll)                           rules)        local LLM)    borrow & restore)
 ```
 
 | File | Responsibility |
@@ -134,6 +168,7 @@ Fn down ─► mic ─► Fn up ─► whisper-server ─► cleanup.py ─► C
 | `samflow.py` | the daemon: Fn event-tap, microphone, server client, pasting |
 | `lexicon.py` | your word list, the corrector that snaps variants back, and the learn-loop |
 | `cleanup.py` | deterministic text rules: fillers, stutters, hallucinations, capitalisation |
+| `polish.py` | optional local-LLM polish pass (Route B) via Ollama — off by default |
 | `hud.py` | the floating pill + menu-bar item |
 | `focus.py` | where is the user typing? caret → mouse-in-window → window |
 | `media.py` | pause Spotify/video while you hold Fn, resume after |
