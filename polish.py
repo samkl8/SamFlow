@@ -25,32 +25,49 @@ _TAGS_URL = "http://127.0.0.1:11434/api/tags"
 _KEEP_ALIVE = "5m"     # model warm ná gebruik, dan geeft Ollama de RAM weer vrij
 _TIMEOUT = 8.0         # seconden; erna: vangrail (ruwe tekst)
 
-# De strenge "polijst, herschrijf niet"-prompt. Uit de prototype-test gekomen: zonder
-# de expliciete regels (behoud tijden/data, zelfcorrectie-afhandeling) verdraaide de 3B
-# soms de betekenis ("naar drie uur" -> "van drie uur"). Raak dit niet aan zonder opnieuw
-# met echte dictaten te testen -- elke regel hieronder ving een echte misser.
+# De "polijst, herschrijf niet"-prompt. Uit de prototype-tests gekomen: zonder de
+# expliciete regels (behoud tijden/data, zelfcorrectie-afhandeling) verdraaide de 3B soms
+# de betekenis ("naar drie uur" -> "van drie uur"), en zonder de structuur-regels + de
+# few-shot die witregels/streepjes voordoet maakte 'ie nooit alinea's of opsommingen.
+# Raak dit niet aan zonder opnieuw met echte dictaten te testen -- elke regel en elk
+# voorbeeld hieronder ving een echte misser.
 _SYSTEM = (
     "Je bent een redacteur die Nederlandse spraakdictaten opschoont tot nette geschreven "
     "tekst. Je polijst, je herschrijft NIET.\n\n"
-    "Regels:\n"
+    "Bewoording:\n"
     "1. Behoud de betekenis exact. Voeg niets toe, laat geen informatie weg.\n"
-    "2. Behoud alle concrete gegevens letterlijk: tijden, data, namen, getallen, plaatsen "
-    "(bv. 'morgen', 'drie uur', 'naar staging' blijven exact staan; 'naar X' betekent naar X).\n"
+    "2. Behoud alle concrete gegevens letterlijk: tijden, data, namen, getallen, plaatsen, "
+    "technische termen (bv. 'morgen', 'drie uur', 'naar staging' blijven exact staan).\n"
     "3. Bij een verspreking of zelfcorrectie ('nee, wacht', 'ik bedoel', 'de... nee') houd je "
     "ALLEEN de gecorrigeerde versie; de foute aanzet laat je weg.\n"
     "4. Verwijder aarzelingen en stopwoorden (eh, uhm, weet je, zeg maar, 'dus' als opvulling).\n"
-    "5. Herstel grammatica, interpunctie en hoofdletters. Splits in nette zinnen; maak alleen "
-    "een opsomming bij een duidelijke opsomming.\n"
-    "6. Blijf in het Nederlands; vertaal niets.\n"
-    "7. Geef UITSLUITEND de opgeschoonde tekst terug -- geen uitleg, geen aanhalingstekens."
+    "5. Herstel grammatica, interpunctie en hoofdletters. Blijf in het Nederlands.\n\n"
+    "Structuur:\n"
+    "6. Gaat het dictaat over meerdere onderwerpen of stappen? Splits in alinea's met een "
+    "WITREGEL (lege regel) ertussen.\n"
+    "7. Zit er een opsomming in (drie of meer punten, taken of items)? Zet die als een lijst, "
+    "elk item op een eigen regel met '- ' ervoor.\n"
+    "8. Een kort, enkelvoudig bericht (een of twee zinnen) blijft lopende tekst -- forceer "
+    "daar GEEN structuur.\n\n"
+    "Geef UITSLUITEND de opgeschoonde tekst terug -- geen uitleg, geen aanhalingstekens."
 )
 
+# Few-shot: doet de vier gedragingen letterlijk voor -- tijd/richting behouden, een
+# zelfcorrectie oplossen, een opsomming met streepjes, en een alinea-splitsing met witregel.
 _FEWSHOT = [
     {"role": "user", "content": "eh kun je de meeting van vandaag verzetten naar half vier"},
     {"role": "assistant", "content": "Kun je de meeting van vandaag naar half vier verzetten?"},
     {"role": "user",
      "content": "we moeten de nee wacht eerst even de facturen controleren en dan pas versturen"},
     {"role": "assistant", "content": "We moeten eerst de facturen controleren en ze dan pas versturen."},
+    {"role": "user",
+     "content": "we moeten nog drie dingen doen de site live zetten de nieuwsbrief versturen en de facturen maken"},
+    {"role": "assistant",
+     "content": "We moeten nog drie dingen doen:\n\n- De site live zetten\n- De nieuwsbrief versturen\n- De facturen maken"},
+    {"role": "user",
+     "content": "de build is groen dus we kunnen mergen daarnaast wil ik het even hebben over de vakantieplanning want ik ben volgende week weg"},
+    {"role": "assistant",
+     "content": "De build is groen, dus we kunnen mergen.\n\nDaarnaast wil ik het even hebben over de vakantieplanning, want ik ben volgende week weg."},
 ]
 
 

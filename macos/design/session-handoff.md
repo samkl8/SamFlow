@@ -236,7 +236,10 @@ Roept een lokaal Ollama-model aan (`qwen2.5:3b`, HTTP `127.0.0.1:11434`) met een
 =False): uit = geen call, geen model, geen RAM — knop in Instellingen → Dicteren → "AI-oppoetsen".
 **Vangrail:** bij élke fout (Ollama weg, model niet gepulld, timeout, leeg, of lengte te
 afwijkend via `_sane`) → gewoon de Route-A-tekst terug; nooit een exceptie naar de Fn-lus.
-- **Prototype-bevinding (waarom opt-in):** latency is prima (warm ~0,6s), maar de 3B is niet
+- **Opmaak (alinea's/witregels + opsommingen):** de prompt heeft nu structuur-regels + een
+  few-shot die een lijst met '- ' en een alinea-splitsing met witregel voordoet. Getest: de 3B
+  maakt nu wel opsommingen en alinea's, korte berichten blijven een zin. Zat puur in de prompt.
+- **Prototype-bevinding (waarom opt-in):** latency is prima (warm ~0,6s), opmaak werkt, maar de 3B is niet
   100% trouw — met de strenge prompt 3/4 goed, harde zelfcorrecties ("de… nee wacht") blijven
   fragiel. Een subtiele betekeniswijziging vangt de lengte-vangrail níét. Daarom bewust opt-in,
   default uit, Route A blijft eronder. Groter model (7-8B) = trouwer maar ~2s + ~5 GB RAM.
@@ -244,6 +247,9 @@ afwijkend via `_sane`) → gewoon de Route-A-tekst terug; nooit een exceptie naa
   = 1,9 GB). `keep_alive=5m` geeft de RAM vrij als je 't niet gebruikt.
 - Model verwijderen: `ollama rm qwen2.5:3b`. Advanced knoppen (`polish_model`, keep_alive,
   timeout) zitten in settings/polish.py, niet in de UI.
+- **Besluit (deze sessie):** 3B blijft de default; we testen 'm eerst een poos in echt gebruik
+  (Sam merkt de missers in de praktijk weinig). De 7B (`qwen2.5:7b`, ~4,7 GB, ~2s) is de knop
+  als de betrouwbaarheid toch gaat storen — niet gepulld, wel als getest-plan genoteerd.
 - Doelgroep: jezelf + een paar bekenden (geen €99 Apple Developer; lokaal bouwen omzeilt de
   Gatekeeper-notarisatiehek). Nederlands, zakelijk, leg *waarom* uit.
 
