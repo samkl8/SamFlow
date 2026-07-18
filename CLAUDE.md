@@ -139,8 +139,18 @@ Dit is de onderhoudslus van het project. Hoor je een woord dat er verkeerd uitko
 - Transport-type komt uit CoreAudio ('bltn'/'blue'), niet uit de naam — namen zijn
   gelokaliseerd ("MacBook Pro microfoon") en veranderen per taal. De índex en de matching
   komen uit sounddevice, dat dezelfde namen rapporteert.
-- De mic wordt bij elke `_open()` opnieuw gekozen (kost 1 ms), zodat AirPods loskoppelen
-  vanzelf naar de ingebouwde mic schakelt en andersom.
+- De mic wordt bij elke `_open()` opnieuw gekozen, zodat AirPods loskoppelen vanzelf naar de
+  ingebouwde mic schakelt en andersom. **Dat werkt alleen mét de `audiodev.refresh()` die
+  `_open()` er vlak vóór aanroept.** PortAudio (V19 op CoreAudio) enumereert apparaten éénmalig
+  bij proces-start en ziet hotplug niet; de app draait dagen. Zonder de re-init blijft
+  `choose_input()` op de bevroren lijst kijken: haal je AirPods eruit, dan toont sounddevice ze
+  nog en wijst `sd.default.device` naar het verdwenen apparaat, dat langs de Bluetooth-check
+  glipt (staat niet meer in de live CoreAudio-`transports()`) en als "gewone default"
+  terugkomt → `InputStream(device=None)` opent het dode apparaat → stilte. `transports()` is wél
+  altijd live (rechtstreeks CoreAudio); enkel de sounddevice-helft bevriest. `refresh()`
+  (`sd._terminate()/_initialize()`, ~3 ms) mag alléén als er geen stream open staat — `_open()`
+  is de juiste plek (self.stream is daar None); doe 't nooit op de status-/labelpaden
+  (`check()`, dashboard-mic-chip), want daar kan een opname-stream openstaan.
 - Diagnose bij "muziek klinkt slecht": check eerst of er een oude samflow-instantie draait die
   de AirPods-mic vasthoudt (`pgrep -f samflow.py`). Een oude instantie met verouderde code was
   de echte oorzaak toen dit voor het eerst opdook.
