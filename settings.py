@@ -25,9 +25,18 @@ DEFAULTS = {
     "sound_cues": True,   # klik bij start / stop / klaar
     "pause_media": True,  # Spotify/video pauzeren tijdens een dictaat
     "show_pill": True,    # de zwevende pill bij de cursor (menubalk blijft altijd)
+    "pill_position": "caret",  # plek van de pill: "caret" (volgt je typen) | "bottom" (onderin) | "fixed" (vaste hoek)
+    "pill_size": "fors",       # staafjes-grootte: "compact" | "ruim" | "fors"
+    "pill_motion": "soepel",   # animatie-gevoel: "soepel" | "kwiek"
     "model": "turbo",     # "turbo" | "large-v3" -- nog niet live, zie voorkeuren
     "auto_update": True,  # op de achtergrond bijwerken vanaf GitHub (fast-forward)
+    "keep_alive": True,   # watchdog brengt de app terug als 'ie onverwacht stopt (zie launchd/watchdog.sh)
+    "share_usage": True,  # anonieme dagelijkse heartbeat (alleen tellen, nooit inhoud); zie telemetry.py
     "lock_mode": "off",   # vastzetten zonder Fn vast te houden: "off"|"tap"|"double"|"chord" (Fn+⌘)
+    "app_mode": "basic",  # aanwezigheid: "basic" (menubalk-accessoire, zoals altijd) | "app" (dock-icoon + ⌘Tab); zie appmode.py
+    "stats_enabled": True,  # inhoudsloze dag-tellingen voor het dashboard (nooit tekst); zie stats.py
+    "history_enabled": False,  # opt-in: bewaar je dictaten (mét tekst) lokaal; standaard UIT; zie history.py
+    "history_days": 30,     # retentie in dagen (0 = altijd bewaren)
 }
 
 _cache = None  # (mtime, dict) -- zelfde patroon als lexicon._read
