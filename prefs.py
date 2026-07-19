@@ -446,8 +446,8 @@ class PrefsController(NSObject):
                           "changeLanguage:"),
             self._grp_static("Model", "Binnenkort instelbaar", "Turbo — snel"),
             self._grp_keycap("Sneltoets", "Ingedrukt houden = opnemen", "fn"),
-            self._grp_seg("Vastzetten", "Zodat je Fn niet hoeft vast te houden",
-                          LOCK_LABELS, LOCK_CODES, "lock_mode", "changeLockMode:"),
+            self._grp_drop("Vastzetten", "Zodat je Fn niet hoeft vast te houden",
+                           LOCK_LABELS, LOCK_CODES, "lock_mode", "changeLockMode:"),
             self._grp_switch("polish_enabled"),
         ])
         y += SEC_GAP
