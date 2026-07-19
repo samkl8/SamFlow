@@ -36,7 +36,7 @@ from AppKit import (
     NSImageScaleProportionallyUpOrDown, NSImageSymbolConfiguration, NSImageView,
     NSMakePoint, NSMakeRect, NSNoBorder, NSPasteboard, NSPasteboardTypeString,
     NSScrollView, NSSearchField, NSTextAlignmentCenter, NSTextAlignmentRight,
-    NSTextField, NSTimer, NSTrackingActiveInKeyWindow,
+    NSTextField, NSTextFieldRoundedBezel, NSTextView, NSTimer, NSTrackingActiveInKeyWindow,
     NSTrackingArea, NSTrackingMouseEnteredAndExited,
     NSView, NSViewHeightSizable, NSViewMinYMargin,
     NSViewWidthSizable, NSWindow, NSWindowStyleMaskClosable,
@@ -488,6 +488,44 @@ class _PillButton(NSView):
             revert(None)
 
 
+class _ClayButton(NSView):
+    """De primaire actie in een gebrand paneel: een gevuld klei-vlak met witte, semibold
+    tekst. Zelf-getekend en zelf-klikbaar -- juist zodat 'ie NIET de blauwe systeem-accent
+    van een default-NSButton pakt (dat botste met Helder). Breedte volgt de titel."""
+    def initWithTitle_target_action_(self, title, target, action):
+        lbl = ui.label(title, 12.5, "medium", color=NSColor.whiteColor())
+        lbl.sizeToFit()
+        tw = lbl.frame().size.width
+        w, h = tw + 32, 30
+        self = objc.super(_ClayButton, self).initWithFrame_(NSMakeRect(0, 0, w, h))
+        if self is None:
+            return None
+        self._target = target
+        self._action = action
+        lbl.setFrame_(NSMakeRect(16, (h - 16) / 2, tw, 16))
+        self.addSubview_(lbl)
+        return self
+
+    def isFlipped(self):
+        return True
+
+    def acceptsFirstMouse_(self, _ev):
+        return True
+
+    def mouseDown_(self, _ev):
+        if self._action and self._target:
+            NSApplication.sharedApplication().sendAction_to_from_(
+                self._action, self._target, self)
+
+    def drawRect_(self, _rect):
+        b = self.bounds()
+        NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+            NSMakeRect(0, 0, b.size.width, b.size.height), 8, 8).addClip()
+        theme.CLAY.set()
+        NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+            NSMakeRect(0, 0, b.size.width, b.size.height), 8, 8).fill()
+
+
 class MainWindow(NSObject):
     def initWithHud_(self, hud):
         self = objc.super(MainWindow, self).init()
@@ -527,6 +565,12 @@ class MainWindow(NSObject):
         self._sugg = []
         self._term_list = []
         self._map_list = []
+        self._sheet_win = None          # gebrand invoer-paneel (term/correctie), één tegelijk
+        self._sheet_mode = None
+        self._sheet_text = None         # NSTextView (term-modus: meerdere regels)
+        self._sheet_heard = None        # NSTextField (correctie-/voorstel-modus, enkel veld)
+        self._sheet_canon = None
+        self._sheet_word = None         # het gehoorde voorstel-woord (correct-modus)
         try:
             self._version = updater.short_version()
         except Exception:
@@ -1043,12 +1087,12 @@ class MainWindow(NSObject):
 
         # 3) Fonetische correcties
         y = ui.glabel(v, ui.PAD, y, inner_w, "Fonetische correcties",
-                      "als Whisper er net naast zit")
+                      "als SamFlow er net naast zit")
         maps_items = list(lexicon.mappings().items())
         if not maps_items:
             y = ui.card_group(v, ui.PAD, y, inner_w, [40], lambda c, i, top, w, _h:
                               self._empty_row(c, top, w,
-                                              "Nog geen correcties — voeg er een toe via een voorstel."))
+                                              "Nog geen correcties — voeg er zelf een toe of behandel een voorstel."))
         else:
             def fill_map(c, idx, top, w, _h):
                 heard, canon = maps_items[idx]
@@ -1071,6 +1115,15 @@ class MainWindow(NSObject):
                 self._map_list.append(heard)
 
             y = ui.card_group(v, ui.PAD, y, inner_w, [38] * len(maps_items), fill_map)
+        # "+ Nieuwe correctie": zelfde in-app-lijn als "+ Nieuwe term" -- opent het gebrande
+        # paneel met twee velden. add_mapping maakt mappings.txt zo nodig aan.
+        addc = NSButton.buttonWithTitle_target_action_("+ Nieuwe correctie", self, "mapNew:")
+        addc.setBordered_(False)
+        addc.setFont_(NSFont.systemFontOfSize_(12))
+        addc.setContentTintColor_(_rgb(_CLAY))
+        addc.setFrame_(NSMakeRect(ui.PAD + 2, y + 8, 170, 20))
+        v.addSubview_(addc)
+        y += 30
         y += ui.PAD
         return v, y
 
@@ -1105,39 +1158,21 @@ class MainWindow(NSObject):
             rm.setFont_(NSFont.systemFontOfSize_(13))
             rm.setContentTintColor_(theme.FAINT)
             rm.setTag_(tag)
-            rm.setFrame_(NSMakeRect(12 + tw + 2, 4, 20, 20))
+            # volle chip-hoogte: de knop centreert het "×" dan zelf verticaal op het
+            # chip-midden, gelijk met de term-tekst (voorheen y=4/h=20 -> 1px te laag).
+            rm.setFrame_(NSMakeRect(12 + tw + 2, 0, 20, 26))
             chip.addSubview_(rm)
         container.addSubview_(chip)
 
     # woordenlijst-acties (rebouwen de tab na elke mutatie; mtime-cache is al invalide)
     def wordCorrect_(self, sender):
-        # De primaire actie op een voorstel. Laat je de tekst staan, dan nemen we het
-        # woord over zoals gehoord (accept); pas je 'm aan, dan is het een fonetische
-        # correctie (map_to gehoord -> canoniek). Zo dekt één knop "Voeg toe" én
-        # "Corrigeer naar…" uit de mockup.
+        # De primaire actie op een voorstel: open het gebrande paneel voorgevuld met het
+        # gehoorde woord. Laat je de tekst staan, dan nemen we het woord over zoals gehoord
+        # (accept); pas je 'm aan, dan is het een fonetische correctie (map_to gehoord ->
+        # canoniek). Zo dekt één knop "Voeg toe" én "Corrigeer naar…" uit de mockup.
         i = sender.tag()
-        if not (0 <= i < len(self._sugg)):
-            return
-        word = self._sugg[i]
-        alert = NSAlert.alloc().init()
-        alert.setMessageText_(f"“{word}” toevoegen of corrigeren")
-        alert.setInformativeText_(
-            "Laat staan om zo toe te voegen, of pas aan naar de juiste schrijfwijze.")
-        field = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 0, 240, 24))
-        field.setStringValue_(word)
-        alert.setAccessoryView_(field)
-        alert.addButtonWithTitle_("Bewaar")      # 1000  (NSAlertFirstButtonReturn)
-        alert.addButtonWithTitle_("Annuleren")   # 1001
-        if alert.runModal() != 1000:
-            return
-        target = field.stringValue().strip()
-        if not target:
-            return
-        if target == word:
-            lexicon.accept(word, word)
-        else:
-            lexicon.map_to(word, target)
-        self.show_tab(2)
+        if 0 <= i < len(self._sugg):
+            self._present_sheet("correct", self._sugg[i])
 
     def wordIgnore_(self, sender):
         i = sender.tag()
@@ -1146,10 +1181,15 @@ class MainWindow(NSObject):
             self.show_tab(2)
 
     def wordNew_(self, _sender):
-        # "+ Nieuwe term": open de persoonlijke lexicon-lijst in de teksteditor. Zelfde
-        # afspraak als Voorkeuren → "Bewerken…"; de lijst wordt per dictaat herlezen.
-        import subprocess
-        subprocess.Popen(["open", "-t", lexicon.LEXICON_FILE])
+        # "+ Nieuwe term": open het gebrande invoer-paneel (meerregelig, meerdere termen
+        # tegelijk). Vroeger opende dit lexicon.txt in een teksteditor -- dat deed niets
+        # als het bestand nog niet bestond, en zag er niet uit als de app.
+        self._present_sheet("term")
+
+    def mapNew_(self, _sender):
+        # "+ Nieuwe correctie": open het gebrande invoer-paneel met twee velden
+        # (gehoord -> canoniek).
+        self._present_sheet("map")
 
     def termRemove_(self, sender):
         i = sender.tag()
@@ -1162,6 +1202,171 @@ class MainWindow(NSObject):
         if 0 <= i < len(self._map_list):
             lexicon.remove_mapping(self._map_list[i])
             self.show_tab(2)
+
+    # ---------- gebrand invoer-paneel (vervangt de kale NSAlert) ----------
+    @objc.python_method
+    def _rounded_field(self, placeholder, w):
+        f = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 0, w, 30))
+        f.setPlaceholderString_(placeholder)
+        f.setFont_(NSFont.systemFontOfSize_(13))
+        f.setBezelStyle_(NSTextFieldRoundedBezel)
+        f.setFocusRingType_(1)                  # NSFocusRingTypeNone -- rustiger, past bij Helder
+        return f
+
+    @objc.python_method
+    def _present_sheet(self, mode, word=None):
+        """Toon een gebrand invoer-paneel als sheet op het hoofdvenster. mode 'term' geeft
+        een meerregelig veld (meerdere termen tegelijk, één per regel); 'map' geeft twee
+        velden (gehoord -> canoniek); 'correct' geeft één veld voorgevuld met een gehoord
+        voorstel-woord. De invoer wordt in sheetAdd_ afgehandeld."""
+        if self._sheet_win is not None:         # al een sheet open? niet stapelen
+            return
+        self._sheet_mode = mode
+        self._sheet_word = word
+        W_, P = 440, 26
+        iw = W_ - 2 * P
+        v = ui.Flipped.alloc().initWithFrame_(NSMakeRect(0, 0, W_, 320))
+        y = P
+
+        if mode == "term":
+            title = "Nieuwe termen"
+            sub = "Projectnamen, merken of jargon. Schrijf ze zoals je ze geplakt wilt zien."
+        elif mode == "correct":
+            title = f"“{word}” toevoegen of corrigeren"
+            sub = "Laat staan om zo toe te voegen, of pas aan naar de juiste schrijfwijze."
+        else:
+            title = "Nieuwe correctie"
+            sub = "Als SamFlow een woord fonetisch net verkeerd hoort."
+        t = ui.label(title, 17, "bold")
+        t.setFrame_(NSMakeRect(P, y, iw, 24))
+        v.addSubview_(t)
+        y += 30
+        # Afbrekend label: de zin is breder dan het paneel, dus een enkelregelig label
+        # kapte 'm af. wrappingLabelWithString_ laat 'm netjes over twee regels lopen.
+        s = NSTextField.wrappingLabelWithString_(sub)
+        s.setFont_(NSFont.systemFontOfSize_(12.5))
+        s.setTextColor_(theme.TEXT2)
+        s.setFrame_(NSMakeRect(P, y, iw, 34))
+        v.addSubview_(s)
+        y += 42
+
+        if mode == "term":
+            fh = 140
+            v.addSubview_(_card(NSMakeRect(P, y, iw, fh)))
+            sc = NSScrollView.alloc().initWithFrame_(NSMakeRect(P + 2, y + 2, iw - 4, fh - 4))
+            sc.setDrawsBackground_(False)
+            sc.setBorderType_(NSNoBorder)
+            sc.setHasVerticalScroller_(True)
+            tv = NSTextView.alloc().initWithFrame_(NSMakeRect(0, 0, iw - 4, fh - 4))
+            tv.setDrawsBackground_(False)
+            tv.setRichText_(False)
+            tv.setFont_(NSFont.systemFontOfSize_(13))
+            tv.setTextColor_(theme.TEXT)
+            tv.setInsertionPointColor_(theme.CLAY)
+            tv.setTextContainerInset_((8, 8))
+            tv.setAutomaticQuoteSubstitutionEnabled_(False)
+            tv.setAutomaticDashSubstitutionEnabled_(False)
+            tv.setAutomaticTextReplacementEnabled_(False)
+            tv.setAutomaticSpellingCorrectionEnabled_(False)
+            sc.setDocumentView_(tv)
+            v.addSubview_(sc)
+            self._sheet_text = tv
+            y += fh + 8
+            hint = ui.label("Eén per regel — plak gerust een hele lijst.", 11, color=theme.FAINT)
+            hint.setFrame_(NSMakeRect(P, y, iw, 15))
+            v.addSubview_(hint)
+            y += 24
+        elif mode == "map":
+            heard = self._rounded_field("SamFlow hoort (bijv. klavijo)", iw)
+            heard.setFrameOrigin_(NSMakePoint(P, y))
+            v.addSubview_(heard)
+            self._sheet_heard = heard
+            y += 38
+            arrow = ui.label("↓ wordt", 11.5, color=theme.FAINT)
+            arrow.setFrame_(NSMakeRect(P + 2, y, iw, 15))
+            v.addSubview_(arrow)
+            y += 20
+            canon = self._rounded_field("Moet worden (bijv. Klaviyo)", iw)
+            canon.setFrameOrigin_(NSMakePoint(P, y))
+            v.addSubview_(canon)
+            self._sheet_canon = canon
+            heard.setNextKeyView_(canon)
+            y += 40
+        else:                                    # correct: één veld, voorgevuld
+            field = self._rounded_field("", iw)
+            field.setStringValue_(word)
+            field.setFrameOrigin_(NSMakePoint(P, y))
+            v.addSubview_(field)
+            self._sheet_heard = field
+            y += 40
+
+        # knoppenrij, rechts uitgelijnd: klei-primair + ghost-annuleren
+        add_label = "Bewaar" if mode == "correct" else "Toevoegen"
+        add = _ClayButton.alloc().initWithTitle_target_action_(add_label, self, "sheetAdd:")
+        aw = add.frame().size.width
+        add.setFrameOrigin_(NSMakePoint(W_ - P - aw, y))
+        v.addSubview_(add)
+        cancel = _PillButton.alloc().initWithTitle_target_action_tag_ghost_(
+            "Annuleren", self, "sheetCancel:", 0, True)
+        cw = cancel.frame().size.width
+        cancel.setFrameOrigin_(NSMakePoint(W_ - P - aw - 10 - cw, y + 4))
+        v.addSubview_(cancel)
+        y += 30 + P
+
+        v.setFrame_(NSMakeRect(0, 0, W_, y))
+        win = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
+            NSMakeRect(0, 0, W_, y), NSWindowStyleMaskTitled, NSBackingStoreBuffered, False)
+        win.setContentView_(v)
+        win.setBackgroundColor_(theme.WINDOW)
+        win.setReleasedWhenClosed_(False)       # wij houden de ref in _sheet_win vast
+        self._sheet_win = win
+        self.window.beginSheet_completionHandler_(win, None)
+        win.makeFirstResponder_(self._sheet_text if mode == "term" else self._sheet_heard)
+        if mode == "correct":                    # voorgevuld: selecteer alles zodat je
+            self._sheet_heard.selectText_(None)  # meteen kunt overtypen
+
+    @objc.python_method
+    def _end_sheet(self):
+        if self._sheet_win is not None:
+            self.window.endSheet_(self._sheet_win)
+            self._sheet_win = None
+            self._sheet_text = self._sheet_heard = self._sheet_canon = None
+            self._sheet_word = None
+
+    def sheetCancel_(self, _sender):
+        self._end_sheet()
+
+    def sheetAdd_(self, _sender):
+        mode = self._sheet_mode
+        if mode == "term":
+            raw = self._sheet_text.string() if self._sheet_text is not None else ""
+            existing = {t.lower() for t in lexicon.terms()}
+            added = 0
+            for line in raw.splitlines():        # één term per regel; spaties in een term blijven
+                term = line.strip()
+                if term and term.lower() not in existing and lexicon.add_term(term):
+                    existing.add(term.lower())
+                    added += 1
+            self._end_sheet()
+            if added:
+                self.show_tab(2)
+        elif mode == "map":
+            heard = self._sheet_heard.stringValue().strip() if self._sheet_heard else ""
+            canon = self._sheet_canon.stringValue().strip() if self._sheet_canon else ""
+            self._end_sheet()
+            if heard and len(canon) >= 2:        # add_mapping weigert een te kort doel zelf ook
+                lexicon.add_mapping(heard, canon)
+                self.show_tab(2)
+        else:                                    # correct: laat je 't staan -> accept,
+            target = self._sheet_heard.stringValue().strip() if self._sheet_heard else ""
+            word = self._sheet_word              # pas je 't aan -> map_to (gehoord -> canoniek)
+            self._end_sheet()
+            if target:
+                if target == word:
+                    lexicon.accept(word, word)
+                else:
+                    lexicon.map_to(word, target)
+                self.show_tab(2)
 
     # ---------- dashboard-bouwstenen ----------
     @objc.python_method
