@@ -120,10 +120,10 @@ _PILL = {
 # lichte als donkere menubalk zichtbaar blijft; idle neutraal grijs. Bewust los van
 # _PILL: wit zou op een lichte menubalk verdwijnen.
 _STATUS_COLORS = {
-    "recording": _CLAY,
-    "thinking": _CLAY,
-    "done": _CLAY,
-    "idle": (0.60, 0.60, 0.62),
+    "recording": _CLAY,                     # klei = bezig (mic staat open)
+    "thinking": _CLAY,                      # klei = bezig (transcriberen)
+    "done": _GREEN,                         # groen = klaar, net als de pill (brand: aan/klaar)
+    "idle": (0.60, 0.60, 0.62),             # grijs = rust
 }
 
 
@@ -164,9 +164,12 @@ def _apply_style():
 
 
 def _status_image(state):
-    """Het balkjes-icoon voor de menubalk, gekleurd naar de status. Klein en niet-
-    template, zodat de kleur (rood tijdens opnemen) behouden blijft."""
-    r, g, b = _STATUS_COLORS.get(state, (0.6, 0.6, 0.62))
+    """Het balkjes-icoon voor de menubalk. In rust (idle) een TEMPLATE-image: macOS
+    kleurt 'm dan mee met de menubalk (zwart in licht, wit in donker) -- zoals elk
+    normaal menubalk-icoon. De actieve toestanden houden juist hun kleur (klei = bezig,
+    groen = klaar), dus die tekenen we niet-template."""
+    template = (state == "idle")
+    r, g, b = (0.0, 0.0, 0.0) if template else _STATUS_COLORS.get(state, (0.6, 0.6, 0.62))
     w, h = 22.0, 16.0
     heights = [0.42, 0.72, 1.00, 0.60]
     bw, gap = 2.8, 2.4
@@ -181,6 +184,7 @@ def _status_image(state):
             NSMakeRect(x, (h - bh) / 2, bw, bh), bw / 2, bw / 2).fill()
         x += bw + gap
     img.unlockFocus()
+    img.setTemplate_(template)               # idle -> menubalk kleurt 'm mee (zwart/wit)
     return img
 
 
