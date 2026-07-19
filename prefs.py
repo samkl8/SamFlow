@@ -60,8 +60,8 @@ _KEYBOARD_PANE = "x-apple.systempreferences:com.apple.preference.keyboard"
 LANG_LABELS = ["Nederlands", "English", "Automatisch"]
 LANG_CODES = ["nl", "en", "auto"]
 
-LOCK_LABELS = ["Uit", "Tik", "Dubbel-tik", "Fn+⌘", "Vasthouden"]
-LOCK_CODES = ["off", "tap", "double", "chord", "hold"]
+LOCK_LABELS = ["Uit", "Tik", "Dubbel-tik", "Fn+⌘"]
+LOCK_CODES = ["off", "tap", "double", "chord"]
 
 POS_LABELS = ["Bij cursor", "Onderin", "Vaste hoek"]
 POS_CODES = ["caret", "bottom", "fixed"]
@@ -446,9 +446,7 @@ class PrefsController(NSObject):
                           "changeLanguage:"),
             self._grp_static("Model", "Binnenkort instelbaar", "Turbo — snel"),
             self._grp_keycap("Sneltoets", "Ingedrukt houden = opnemen", "fn"),
-            self._grp_seg("Vastzetten",
-                          "Zodat je Fn niet hoeft vast te houden. “Vasthouden” = Fn langer "
-                          "vasthouden, dan stopt 'ie vanzelf zodra je klaar bent met praten",
+            self._grp_seg("Vastzetten", "Zodat je Fn niet hoeft vast te houden",
                           LOCK_LABELS, LOCK_CODES, "lock_mode", "changeLockMode:"),
             self._grp_switch("polish_enabled"),
         ])

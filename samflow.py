@@ -35,7 +35,7 @@ import sounddevice as sd
 from AppKit import (
     NSEvent, NSEventMaskKeyDown, NSPasteboard, NSPasteboardTypeString, NSWorkspace,
 )
-from Foundation import CFPreferencesCopyAppValue, NSTimer
+from Foundation import CFPreferencesCopyAppValue
 from ApplicationServices import AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt
 from AVFoundation import AVCaptureDevice, AVMediaTypeAudio
 from Quartz import (
@@ -71,14 +71,6 @@ MIN_SPEECH_SEC = 0.35      # shorter than this is a stray Fn tap, not speech
 MAX_SPEECH_SEC = 120
 SILENCE_RMS = 120          # speech measures ~4000, a quiet room ~40. Below this we
                            # never call Whisper: fed silence, it invents sentences.
-
-# "Vasthouden"-modus (lock_mode "hold"): houd je Fn langer dan HOLD_LATCH_SEC vast en
-# laat dan los, dan blijft 'ie hands-free opnemen en stopt vanzelf na AUTO_STOP_SILENCE
-# seconden stilte. Korter vasthouden = gewone push-to-talk (loslaten stopt meteen).
-HOLD_LATCH_SEC = 1.2       # zo lang vasthouden-dan-loslaten schakelt hands-free in
-AUTO_STOP_SILENCE = 1.5    # hands-free stopt na zoveel seconden stilte ná spraak
-NO_SPEECH_SEC = 6.0        # hands-free maar niets gezegd: na zoveel seconden toch stoppen
-VAD_RMS = 300              # een blok boven deze RMS telt als spraak (SILENCE_RMS is de vloer)
 SOUND_CUES = True
 SHOW_HUD = True            # floating pill + menu-bar dot, see hud.py
 HUD_FULL_SCALE = 3000.0    # mic RMS that drives the bars to full height
@@ -184,24 +176,15 @@ class Recorder:
         self.preroll = collections.deque(maxlen=int(PREROLL_SEC * SAMPLE_RATE / BLOCK))
         self.lock = threading.Lock()
         self.last_used = 0.0
-        # VAD voor de "Vasthouden"-modus: bijgehouden vanuit _callback (audiothread),
-        # gelezen vanuit de main-thread auto-stop-timer. Simpele floats/bools -> geen lock.
-        self.spoke = False           # is er al een blok boven VAD_RMS geweest?
-        self.last_voice_t = 0.0      # tijdstip van het laatste spraakblok
-        self.start_t = 0.0           # begin van de huidige opname
         threading.Thread(target=self._reap_idle, daemon=True).start()
 
     def _callback(self, indata, frames, time_info, status):
         with self.lock:
             (self.frames if self.recording else self.preroll).append(indata.copy())
             recording = self.recording
-        if recording:
+        if recording and HUD:
             rms = float(np.sqrt(np.mean(indata.astype(np.float64) ** 2)))
-            if rms >= VAD_RMS:                    # spraakblok: reset de stilte-teller
-                self.last_voice_t = time.monotonic()
-                self.spoke = True
-            if HUD:
-                HUD.set_level(math.sqrt(min(rms / HUD_FULL_SCALE, 1.0)))
+            HUD.set_level(math.sqrt(min(rms / HUD_FULL_SCALE, 1.0)))
 
     def _reap_idle(self):
         while True:
@@ -268,19 +251,6 @@ class Recorder:
             # van vóór de Fn-druk bestaat dan uit muziek, en die wil Whisper niet.
             self.frames = list(self.preroll) if use_preroll else []
             self.recording = True
-            self.spoke = False                    # VAD vers per opname
-            self.last_voice_t = 0.0
-            self.start_t = time.monotonic()
-
-    def should_auto_stop(self, now, silence_sec, no_speech_sec):
-        """Mag een hands-free opname vanzelf stoppen? Ná spraak: zoveel seconden stilte.
-        Is er nog niets gezegd: pas na een langere leegloop (voorkomt een eeuwig open
-        mic als je per ongeluk vastzet en niets zegt)."""
-        if not self.recording:
-            return False
-        if self.spoke:
-            return (now - self.last_voice_t) >= silence_sec
-        return (now - self.start_t) >= no_speech_sec
 
     def stop(self) -> np.ndarray:
         with self.lock:
@@ -403,8 +373,6 @@ def run_daemon():
     #   tap    = korte Fn-tik zet vast
     #   double = dubbele Fn-tik zet vast
     #   chord  = Fn + ⌘ zet vast
-    #   hold   = Fn lang vasthouden-dan-loslaten zet vast; stopt vanzelf bij stilte
-    #            (auto-stop via _auto_stop_tick hieronder)
     TAP_MAX = 0.35        # Fn omlaag->omhoog korter dan dit is een "tik", geen "houden"
     DOUBLE_GAP = 0.40     # twee tikken binnen dit venster = een dubbel-tik
     locked = False
@@ -502,10 +470,7 @@ def run_daemon():
                 hud_state("idle")
                 last_tap_t = now
                 return event
-            if mode == "hold" and elapsed >= HOLD_LATCH_SEC:
-                locked = True                      # lang vastgehouden -> hands-free;
-                return event                       # de auto-stop-timer stopt op stilte
-            end()                                  # houden losgelaten (of mode uit / korte hold)
+            end()                                  # houden losgelaten (of mode uit)
             last_tap_t = 0.0
             return event
 
@@ -525,22 +490,6 @@ def run_daemon():
     source = CFMachPortCreateRunLoopSource(None, tap, 0)
     CFRunLoopAddSource(CFRunLoopGetCurrent(), source, kCFRunLoopCommonModes)
     CGEventTapEnable(tap, True)
-
-    # Auto-stop voor de "Vasthouden"-modus. Een repeterende timer op DEZELFDE main run
-    # loop als de tap (NSApp.run drijft 'm), zodat 'end()' op de main thread loopt --
-    # nooit vanuit de audio-callback (die zou op de recorder-lock deadlocken). Alleen
-    # actief als je in 'hold'-modus hands-free hebt vastgezet (locked); anders per tik
-    # een goedkope settings-lookup en klaar.
-    def _auto_stop_tick(_timer):
-        nonlocal locked
-        if not (locked and rec.recording) or settings.get("lock_mode") != "hold":
-            return
-        if rec.should_auto_stop(time.monotonic(), AUTO_STOP_SILENCE, NO_SPEECH_SEC):
-            end()
-            locked = False
-
-    _auto_stop_timer = NSTimer.scheduledTimerWithTimeInterval_repeats_block_(  # noqa: F841
-        0.2, True, _auto_stop_tick)
 
     print("samflow draait. Houd Fn ingedrukt, praat, laat los. Ctrl-C stopt.")
 
