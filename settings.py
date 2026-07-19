@@ -34,7 +34,7 @@ DEFAULTS = {
     "auto_update": True,  # op de achtergrond bijwerken vanaf GitHub (fast-forward)
     "keep_alive": True,   # watchdog brengt de app terug als 'ie onverwacht stopt (zie launchd/watchdog.sh)
     "share_usage": True,  # anonieme dagelijkse heartbeat (alleen tellen, nooit inhoud); zie telemetry.py
-    "lock_mode": "off",   # vastzetten zonder Fn vast te houden: "off"|"tap"|"double"|"chord" (Fn+⌘)
+    "lock_mode": "off",   # vastzetten zonder Fn vast te houden: "off"|"tap"|"double"|"chord" (Fn+⌘)|"hold" (lang vasthouden -> auto-stop bij stilte)
     "app_mode": "basic",  # aanwezigheid: "basic" (menubalk-accessoire, zoals altijd) | "app" (dock-icoon + ⌘Tab); zie appmode.py
     "stats_enabled": True,  # inhoudsloze dag-tellingen voor het dashboard (nooit tekst); zie stats.py
     "history_enabled": False,  # opt-in: bewaar je dictaten (mét tekst) lokaal; standaard UIT; zie history.py
