@@ -53,7 +53,6 @@ from Foundation import NSNotificationCenter, NSObject
 
 import appmode
 import focus
-import lexicon
 import panel
 import prefs
 import settings
@@ -475,7 +474,13 @@ class _Ticker(NSObject):
     # --- paneel-acties. Draaien op de main thread (het zijn klikken), maar het
     #     echte werk gaat naar losse processen zodat het paneel nooit blokkeert.
     def editLexicon_(self, _sender):
-        subprocess.Popen(["open", "-t", lexicon.LEXICON_FILE])
+        # Open de Woordenlijst-tab van het hoofdvenster (de in-app editor: chips
+        # toevoegen/verwijderen, correcties), niet meer lexicon.txt in een teksteditor.
+        # Dat laatste deed niets bij een verse install zonder persoonlijke lijst -- het
+        # bestand bestond dan nog niet, dus `open -t` faalde stil. Lui geïmporteerd,
+        # net als openMainWindow_.
+        import mainwindow
+        mainwindow.open_main_window(self.hud).show_tab(2)
 
     def reviewWords_(self, _sender):
         # --review is interactief, dus in een echte Terminal, niet in dit proces.

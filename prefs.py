@@ -38,7 +38,6 @@ from Quartz import (
 )
 
 import appmode
-import lexicon
 import settings
 import theme
 import ui
@@ -603,7 +602,13 @@ class PrefsController(NSObject):
         _login_item_set(sender.state() == NSControlStateValueOn)
 
     def editLexicon_(self, _sender):
-        subprocess.Popen(["open", "-t", lexicon.LEXICON_FILE])
+        # Spring naar de Woordenlijst-tab van het hoofdvenster -- de echte in-app editor
+        # (termen als chips toevoegen/verwijderen, fonetische correcties). Vroeger opende
+        # dit lexicon.txt in TextEdit, wat niets deed als het bestand nog niet bestond.
+        # Mainwindow lui importeren: mainwindow importeert prefs, dus een top-level import
+        # hier zou een cyclus geven.
+        import mainwindow
+        mainwindow.open_main_window().show_tab(2)
 
 
 class PreferencesWindow(NSObject):
