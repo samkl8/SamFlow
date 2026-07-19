@@ -60,8 +60,8 @@ _KEYBOARD_PANE = "x-apple.systempreferences:com.apple.preference.keyboard"
 LANG_LABELS = ["Nederlands", "English", "Automatisch"]
 LANG_CODES = ["nl", "en", "auto"]
 
-LOCK_LABELS = ["Uit", "Tik", "Dubbel-tik", "Fn+⌘"]
-LOCK_CODES = ["off", "tap", "double", "chord"]
+LOCK_LABELS = ["Uit", "Tik", "Dubbel-tik", "Fn+⌘", "Vasthouden"]
+LOCK_CODES = ["off", "tap", "double", "chord", "hold"]
 
 POS_LABELS = ["Bij cursor", "Onderin", "Vaste hoek"]
 POS_CODES = ["caret", "bottom", "fixed"]
@@ -446,7 +446,9 @@ class PrefsController(NSObject):
                           "changeLanguage:"),
             self._grp_static("Model", "Binnenkort instelbaar", "Turbo — snel"),
             self._grp_keycap("Sneltoets", "Ingedrukt houden = opnemen", "fn"),
-            self._grp_seg("Vastzetten", "Zodat je Fn niet hoeft vast te houden",
+            self._grp_seg("Vastzetten",
+                          "Zodat je Fn niet hoeft vast te houden. “Vasthouden” = Fn langer "
+                          "vasthouden, dan stopt 'ie vanzelf zodra je klaar bent met praten",
                           LOCK_LABELS, LOCK_CODES, "lock_mode", "changeLockMode:"),
             self._grp_switch("polish_enabled"),
         ])
@@ -510,8 +512,38 @@ class PrefsController(NSObject):
     # --- acties ---
     def toggleSwitch_(self, sender):
         key = self._tag_keys.get(sender.tag())
-        if key:
-            settings.set(key, sender.state() == NSControlStateValueOn)
+        if not key:
+            return
+        on = sender.state() == NSControlStateValueOn
+        settings.set(key, on)
+        # AI-oppoetsen leunt op een lokaal Ollama-model. Zet iemand 'm aan zonder dat
+        # model, dan valt polish stil terug op de kale tekst (zie polish.py) -- dat is
+        # onzichtbaar en verwarrend. Daarom hier meteen een melding. De check doet een
+        # netwerk-call (~1.5s) dus op een achtergrondthread; het resultaat komt op de
+        # main thread terug.
+        if key == "polish_enabled" and on:
+            def work():
+                import polish
+                if not polish.available():
+                    self.performSelectorOnMainThread_withObject_waitUntilDone_(
+                        "_polishUnavailableAlert:", None, False)
+            threading.Thread(target=work, daemon=True).start()
+
+    def _polishUnavailableAlert_(self, _obj):
+        if not settings.get("polish_enabled"):     # ondertussen weer uitgezet? laat maar
+            return
+        model = settings.get("polish_model")
+        alert = NSAlert.alloc().init()
+        alert.setMessageText_("Oppoets-model niet gevonden")
+        alert.setInformativeText_(
+            f"AI-oppoetsen staat aan, maar Ollama of het model “{model}” draait niet. "
+            "Zonder dat blijft je tekst onopgepoetst — de opschoon-regels doen wél gewoon "
+            "hun werk.\n\n"
+            f"Installeer Ollama en draai in Terminal:\n    ollama pull {model}")
+        alert.addButtonWithTitle_("Oké")
+        alert.addButtonWithTitle_("Ollama installeren…")
+        if alert.runModal() == 1001:               # NSAlertSecondButtonReturn
+            subprocess.Popen(["open", "https://ollama.com/download"])
 
     def changeLanguage_(self, sender):
         i = sender.selectedSegment()
@@ -667,6 +699,8 @@ class WelcomeWindow(NSObject):
         if self is None:
             return None
         self._dots = []      # (statusveld, check-functie)
+        self._fn_dot = None  # live Fn-status (los van _dots: blokkeert 'Begin' niet)
+        self._fn_lbl = None
         self._build()
         self._timer = NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
             1.5, self, "refresh:", None, True)
@@ -716,11 +750,17 @@ class WelcomeWindow(NSObject):
             y += ROW_H
 
         y += 8
-        fnrow = _label("Fn-toets vrijmaken: Toetsenbord → “Druk op fn” → Niets doen",
-                       size=12, color=NSColor.secondaryLabelColor())
-        fnrow.setFrame_(NSMakeRect(PAD, y + 4, W - 2 * PAD - 150, 30))
-        fnrow.setLineBreakMode_(0)
-        v.addSubview_(fnrow)
+        # Fn-status: LIVE, want dit is de nummer-1-valkuil. Staat 'Druk op fn' op iets
+        # anders dan 'Niets doen', dan opent macOS bij elk dictaat de emoji-kiezer (de
+        # tap is listen-only en kan Fn niet opslokken). Bewust NIET in _dots -- het
+        # blokkeert 'Begin' niet, maar het vinkje/⚠ slaat wel meteen om als je 't goedzet.
+        self._fn_dot = _label("○", size=15, color=NSColor.tertiaryLabelColor())
+        self._fn_dot.setFrame_(NSMakeRect(PAD, y + 4, 22, 20))
+        v.addSubview_(self._fn_dot)
+        self._fn_lbl = _label("", size=12, color=NSColor.secondaryLabelColor())
+        self._fn_lbl.setFrame_(NSMakeRect(PAD + 30, y, W - 2 * PAD - 30 - 116, 38))
+        self._fn_lbl.setLineBreakMode_(0)
+        v.addSubview_(self._fn_lbl)
         kb = NSButton.buttonWithTitle_target_action_("Toetsenbord", self, "openKeyboard:")
         kb.sizeToFit()
         kbw = max(kb.frame().size.width, 100)
@@ -795,6 +835,18 @@ class WelcomeWindow(NSObject):
             dot.setTextColor_(NSColor.systemGreenColor() if ok
                               else NSColor.tertiaryLabelColor())
         self._begin.setEnabled_(all_ok)
+        # Fn-status apart bijwerken (blokkeert 'Begin' niet, maar wél zichtbaar). Klei
+        # ⚠ = macOS pakt Fn nog af; groen ✓ = vrij voor SamFlow.
+        if self._fn_dot is not None:
+            free = _fn_free()
+            self._fn_dot.setStringValue_("✓" if free else "⚠")
+            self._fn_dot.setTextColor_(NSColor.systemGreenColor() if free else _CLAY)
+            self._fn_lbl.setStringValue_(
+                "Fn-toets is vrij — klaar voor SamFlow." if free else
+                "Fn opent nu iets van macOS (emoji-kiezer). Zet Toetsenbord → "
+                "“Druk op fn” op “Niets doen”.")
+            self._fn_lbl.setTextColor_(
+                NSColor.secondaryLabelColor() if free else _CLAY)
 
     # --- acties ---
     def refresh_(self, _timer):
