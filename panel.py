@@ -247,7 +247,7 @@ class MenuPanel(NSObject):
         # snelle toggles
         self._switch_row(root, y, "Geluiden", "sound_cues")
         y += 34
-        self._switch_row(root, y, "Media pauzeren", "pause_media")
+        self._switch_row(root, y, "Media stilhouden", "pause_media")
         y += 34
         self._switch_row(root, y, "Pill tonen", "show_pill")
         y += 34
