@@ -23,7 +23,7 @@ SETTINGS_FILE = os.path.join(BASE, "settings.json")
 DEFAULTS = {
     "language": "nl",     # "nl" | "en" | "auto" -- per dictaat naar whisper-server
     "sound_cues": True,   # klik bij start / stop / klaar
-    "pause_media": True,  # Spotify/video pauzeren tijdens een dictaat
+    "pause_media": True,  # media stilhouden tijdens een dictaat: Spotify/Music pauzeren + webaudio dempen
     "show_pill": True,    # de zwevende pill bij de cursor (menubalk blijft altijd)
     "pill_position": "caret",  # plek van de pill: "caret" (volgt je typen) | "bottom" (onderin) | "fixed" (vaste hoek)
     "pill_size": "fors",       # staafjes-grootte: "compact" | "ruim" | "fors"

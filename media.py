@@ -26,6 +26,22 @@ plaats van een toggle: pauzeren en hervatten zijn dan onafhankelijk van de toest
 De whitelist blijft nodig voor het hervatten. Maakt Zoom het geluid, dan doet `pause`
 niets, maar zou `play` daarna je stilstaande Spotify starten. Dus: alleen ingrijpen
 als de geluidmakende app een mediaspeler of browser is.
+
+**Webcontent (YouTube) is een apart geval.**
+Een `<video>` in de browser luistert niet naar MediaRemote: dat commando gaat naar de
+één *now playing*-app, en dat is vaak een al gepauzeerde Spotify — niet de tab. Gemeten:
+met Spotify én een Safari-video actief pauzeerde `MRMediaRemoteSendCommand(pause)` de
+video niet, en de `play` erna startte juist Spotify. Bovendien speelt webaudio niet af
+onder de naam van de browser maar via een hulp-proces (`com.apple.WebKit.GPU` voor
+Safari, "… Helper (Renderer)" voor Chromium), dus de browser-namen in MEDIA_APPS matchten
+het geluidmakende proces sowieso nooit.
+
+Daarom een tweede laag: zolang we opnemen **dempen** we de systeem-output als er
+webcontent klinkt. Dat is universeel (werkt voor YouTube én al het andere) en kost
+in-process 0,6 ms. De video loopt wél door — je mist die paar seconden beeldgeluid —
+maar dat is de prijs van dempen i.p.v. pauzeren, en voor een dictaat prima. Muten en
+pauzeren zijn gescheiden geboekt (`_muted` naast `_paused`): `play` sturen we alleen voor
+wat we écht pauzeerden, zodat een YouTube-tab nooit per ongeluk je Spotify start.
 """
 
 import ctypes
@@ -49,6 +65,10 @@ MEDIA_APPS = {
 # IsRunningOutput blijft in dat venster op 1 terwijl er niets klinkt. Zonder deze
 # controle zou samflow je muziek *starten* als je hem net zelf had uitgezet.
 SCRIPTABLE = ("Spotify", "Music")
+
+# Webcontent speelt af via een hulp-proces, niet onder de browsernaam. Deze namen staan
+# bewust níét in MEDIA_APPS: pauzeren werkt er niet voor (zie de docstring), dempen wel.
+_CHROMIUM = ("Chrome", "Chromium", "Brave", "Edge", "Vivaldi", "Opera", "Arc")
 # ----------------------------
 
 _SYSTEM_OBJECT = 1
@@ -122,6 +142,18 @@ def sounding() -> list:
     return found
 
 
+def _is_web_audio(name: str) -> bool:
+    """Klinkt dit proces als webcontent (Safari/WKWebView of een Chromium-tab)?"""
+    if name.startswith("com.apple.WebKit"):
+        return True
+    return "Helper" in name and any(b in name for b in _CHROMIUM)
+
+
+def web_sounding() -> list:
+    """Browser-/webcontent die op dit moment geluid maakt (YouTube en co.)."""
+    return [(pid, name) for pid, name in sounding() if _is_web_audio(name)]
+
+
 # `tell application "Music" to player state` START Music.app als die niet draait.
 # De `is running`-test doet dat niet. En `as text` dwingt "playing" af in plaats van
 # de rauwe AppleEvent-code ('kPSP'), waar we niet op willen bouwen.
@@ -165,47 +197,99 @@ def pauseable() -> list:
     return found
 
 
-class MediaGuard:
-    """Pauzeert bij het begin van een dictaat, hervat aan het eind - en alleen als wíj
-    ook echt gepauzeerd hebben. Zonder die boekhouding zou `play` na een dictaat
-    muziek starten die al stil stond."""
+# Systeem-output dempen. Alleen via NSAppleScript in-process (0,6 ms gemeten); een
+# osascript-subproces kost 132 ms en dit draait op de main thread bij Fn-omlaag.
+# `set volume output muted` laat het volumeniveau staan, dus terugzetten is één vlag.
+_MUTE_SRC = {
+    "read": "return output muted of (get volume settings)",
+    "on":   "set volume output muted true",
+    "off":  "set volume output muted false",
+}
+_mute_scripts = {}
 
-    available = _mr is not None
+
+def _mute_script(key: str):
+    if key not in _mute_scripts:
+        script = NSAppleScript.alloc().initWithSource_(_MUTE_SRC[key])
+        ok, _ = script.compileAndReturnError_(None)
+        _mute_scripts[key] = script if ok else None
+    return _mute_scripts[key]
+
+
+def _output_muted():
+    """True/False of de systeem-output nu gedempt staat; None als het niet lukt."""
+    script = _mute_script("read")
+    if script is None:
+        return None
+    result, error = script.executeAndReturnError_(None)
+    return None if (error or result is None) else bool(result.booleanValue())
+
+
+def _set_output_muted(on: bool):
+    script = _mute_script("on" if on else "off")
+    if script is not None:
+        script.executeAndReturnError_(None)
+
+
+class MediaGuard:
+    """Bij het begin van een dictaat: pauzeer wat MediaRemote betrouwbaar bedient
+    (Spotify/Music) én demp de systeem-output als er webcontent klinkt. Aan het eind:
+    hervatten en het dempen terugdraaien - alleen als wíj het zetten. Zonder die
+    boekhouding (`_paused`/`_muted`) zou `play` muziek starten die al stil stond, of
+    zouden we de gebruiker ontdempen die zélf op mute stond."""
+
+    # Pauzeren vraagt MediaRemote; dempen kan altijd. Dus: de guard is altijd bruikbaar.
+    available = True
 
     def __init__(self):
         self._paused = False
+        self._muted = False
         self._lock = threading.Lock()
 
     def pause(self) -> list:
-        """Geeft terug wat er gepauzeerd is (leeg = niets gedaan)."""
-        if not self.available:
-            return []
+        """Geeft terug wat er stilgelegd is (leeg = niets gedaan)."""
         with self._lock:
-            if self._paused:
+            if self._paused or self._muted:
                 return []
+            acted = []
+            # 1) Echte pauze voor wat MediaRemote aankan: positie blijft bewaard, en
+            #    alleen híervoor sturen we straks `play`.
             playing = pauseable()
-            if not playing:
-                return []
-            _mr.MRMediaRemoteSendCommand(_MR_PAUSE, None)
-            self._paused = True
-            return playing
+            if playing and _mr is not None:
+                _mr.MRMediaRemoteSendCommand(_MR_PAUSE, None)
+                self._paused = True
+                acted += playing
+            # 2) Webcontent (YouTube) luistert niet naar MediaRemote - zie de docstring.
+            #    Dus dempen we de output, mits de gebruiker niet al zelf op mute stond.
+            web = web_sounding()
+            if web and _output_muted() is False:
+                _set_output_muted(True)
+                self._muted = True
+                acted += web
+            return acted
 
     def resume(self):
-        if not self.available:
-            return
         with self._lock:
-            if self._paused:
+            if self._paused and _mr is not None:
                 _mr.MRMediaRemoteSendCommand(_MR_PLAY, None)
-                self._paused = False
+            self._paused = False
+            if self._muted:
+                _set_output_muted(False)
+            self._muted = False
 
 
 if __name__ == "__main__":
-    if not MediaGuard.available:
-        print("MediaRemote niet beschikbaar - pauzeren staat uit")
+    if _mr is None:
+        print("MediaRemote niet beschikbaar - pauzeren staat uit (dempen werkt wel)")
 
     playing = sounding()
     if not playing:
         print("er speelt niets af")
     for pid, name in playing:
-        mark = "PAUZEERBAAR" if name in MEDIA_APPS else "met rust laten"
-        print(f"  {name:24} pid {pid:<8} {mark}")
+        if name in MEDIA_APPS:
+            mark = "PAUZEREN"
+        elif _is_web_audio(name):
+            mark = "DEMPEN (webcontent)"
+        else:
+            mark = "met rust laten"
+        print(f"  {name:28} pid {pid:<8} {mark}")

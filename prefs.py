@@ -671,7 +671,7 @@ _ROW_TEXT = {
     "polish_enabled": ("AI-oppoetsen (lokaal)",
                        "Een lokaal model maakt er nette zinnen van. Kost ~0,6s extra en RAM; uit = alleen de regels."),
     "sound_cues": ("Geluiden", "Klik bij start, stop en klaar"),
-    "pause_media": ("Media pauzeren tijdens dictaat", None),
+    "pause_media": ("Media stilhouden tijdens dictaat", "Zet even stil wat er speelt terwijl je opneemt"),
     "show_pill": ("Pill bij de cursor tonen", None),
     "stats_enabled": ("Statistieken bijhouden", "Alleen tellingen op deze Mac — nooit je tekst. Voor het dashboard."),
     "history_enabled": ("Historie bewaren", "Bewaart je dictaten (mét tekst) lokaal. Standaard uit."),
