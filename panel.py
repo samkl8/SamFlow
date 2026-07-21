@@ -22,19 +22,23 @@ het altijd de actuele status, laatste dictaat, toggle-standen en update-stand
 zonder een aparte verver-route. Dat kost niets -- het opent maar af en toe.
 
 Bij openen activeren we de app even (activateIgnoringOtherApps_): anders rendert
-macOS de switches in de inactieve, grijze stijl i.p.v. groen. Veilig, want het
-paneel is een bewuste klik en de Fn-tap is globaal.
+macOS de switches in de inactieve, grijze stijl i.p.v. groen. Dat moet vóór het
+tonen gebeuren -- activeren ná showRelativeToRect_ brengt een openstaand hoofdvenster
+naar voren en sluit de transient popover meteen weer (dan 'opende er niets'). Veilig,
+want het paneel is een bewuste klik en de Fn-tap is globaal.
 
 Alle AppKit-calls op de main thread (de popover opent door een klik).
 """
+import time
 import objc
 from AppKit import (
     NSApplication,
-    NSButton, NSColor, NSFont,
-    NSFontWeightRegular, NSImage, NSImageLeft,
+    NSButton, NSColor, NSEvent, NSEventMaskLeftMouseDown, NSEventMaskRightMouseDown,
+    NSFont, NSFontWeightRegular, NSImage, NSImageLeft,
     NSImageSymbolConfiguration, NSMakeRect, NSMinYEdge, NSPopover,
-    NSPopoverBehaviorTransient, NSControlStateValueOff, NSControlStateValueOn,
+    NSPopoverBehaviorApplicationDefined, NSControlStateValueOff, NSControlStateValueOn,
     NSTextAlignmentLeft, NSTextField, NSViewController,
+    NSWindowCollectionBehaviorCanJoinAllSpaces, NSWindowCollectionBehaviorFullScreenAuxiliary,
 )
 from Foundation import NSObject
 
@@ -109,9 +113,15 @@ class MenuPanel(NSObject):
         vc = NSViewController.alloc().init()
         pop = NSPopover.alloc().init()
         pop.setContentViewController_(vc)
-        pop.setBehavior_(NSPopoverBehaviorTransient)
+        # ApplicationDefined i.p.v. Transient: een transient popover sluit zichzelf zodra
+        # z'n app niet actief/key is, en op recente macOS wordt een accessory-app niet meer
+        # actief via activateIgnoringOtherApps_ -- dus klikte je vanuit een andere app, dan
+        # flitste de popover open en meteen weer dicht. Nu sluiten we 'm zelf (zie toggle).
+        pop.setBehavior_(NSPopoverBehaviorApplicationDefined)
         self._vc = vc
         self.popover = pop
+        self._monitor = None      # global mouse-monitor terwijl de popover open is
+        self._closed_at = 0.0     # debounce: klik-om-te-sluiten niet meteen heropenen
         self._rebuild()
         return self
 
@@ -298,15 +308,47 @@ class MenuPanel(NSObject):
     @objc.python_method
     def toggle(self, button):
         if self.popover.isShown():
-            self.popover.performClose_(None)
+            self._close_panel()
             return
+        # Klik-om-te-sluiten mag niet meteen heropenen: de monitor hieronder kan de sluit-klik
+        # al hebben afgehandeld vlak vóór deze action binnenkomt.
+        if time.monotonic() - self._closed_at < 0.25:
+            return
+        # Nieuwe coöperatieve activate() (macOS 14+): maakt de accessory-app actief zodat de
+        # popover over een andere -- of fullscreen -- app rendert. Het oude
+        # activateIgnoringOtherApps_ deed hier niets (bewezen: active bleef False, geen venster).
+        app = NSApplication.sharedApplication()
+        if app.respondsToSelector_("activate"):
+            app.activate()
+        else:
+            app.activateIgnoringOtherApps_(True)
         self._rebuild()
         self.popover.showRelativeToRect_ofView_preferredEdge_(
             button.bounds(), button, NSMinYEdge)
-        NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
         win = self._vc.view().window()
         if win is not None:
-            win.makeKeyWindow()
+            # Meekomen naar de actieve Space (ook een fullscreen-app op een ander scherm),
+            # anders landt de popover op de home-desktop en zie je 'm daar niet.
+            win.setCollectionBehavior_(
+                NSWindowCollectionBehaviorCanJoinAllSpaces
+                | NSWindowCollectionBehaviorFullScreenAuxiliary)
+            win.makeKeyAndOrderFront_(None)
+        # Sluiten bij een klik buiten de app: een global monitor vangt muis-downs die naar
+        # ándere apps gaan (niet onze status-item-klik). Pas ná het tonen geïnstalleerd, dus
+        # de open-klik triggert 'm niet.
+        if self._monitor is None:
+            mask = NSEventMaskLeftMouseDown | NSEventMaskRightMouseDown
+            self._monitor = NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
+                mask, lambda _ev: self._close_panel())
+
+    @objc.python_method
+    def _close_panel(self):
+        self._closed_at = time.monotonic()
+        if self._monitor is not None:
+            NSEvent.removeMonitor_(self._monitor)
+            self._monitor = None
+        if self.popover.isShown():
+            self.popover.performClose_(None)
 
     def toggleSwitch_(self, sender):
         for sw, key in self._switches:
