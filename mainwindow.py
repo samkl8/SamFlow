@@ -445,7 +445,9 @@ class _PillButton(NSView):
                 self._action, self._target, self)
 
     def drawRect_(self, _rect):
-        if self._ghost:
+        # Tijdens de kopieer-flash geen chip tekenen: dan staat er een kaal vinkje i.p.v.
+        # een los pilletje met een vinkje erin.
+        if self._ghost or self._flashing:
             return
         b = self.bounds()
         r = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
@@ -471,17 +473,24 @@ class _PillButton(NSView):
 
     @objc.python_method
     def flash_copied(self):
-        """Korte bevestiging op een kopieer-chip: even '✓ Gekopieerd' in groen, dan
-        terug. Vervangt ui.flash_copied (die op een NSButton-title werkte); de chip
-        past z'n breedte aan en klapt na ~1,3 s terug."""
+        """Korte bevestiging: een kaal, gecentreerd groen vinkje -- géén chip-achtergrond
+        (drawRect_ slaat 'm over zolang _flashing) en geen bredere 'Gekopieerd' die over
+        de tekst links ervan zou vallen. We houden hetzelfde kader vast en centreren het
+        vinkje erin, dus niets verspringt. Klapt na ~1,3 s terug naar de 'Kopieer'-chip."""
         if self._flashing:
             return
         self._flashing = True
-        self._relabel("✓ Gekopieerd", _rgb(_GREEN))
+        b = self.bounds()
+        self._lbl.setStringValue_("✓")
+        self._lbl.setTextColor_(_rgb(_GREEN))
+        self._lbl.setAlignment_(NSTextAlignmentCenter)
+        self._lbl.setFrame_(NSMakeRect(0, (b.size.height - 15) / 2, b.size.width, 15))
+        self.setNeedsDisplay_(True)
 
         def revert(_t):
-            self._relabel(self._title, theme.TEXT2 if self._ghost else theme.TEXT)
             self._flashing = False
+            self._relabel(self._title, theme.TEXT2 if self._ghost else theme.TEXT)
+            self.setNeedsDisplay_(True)
         try:
             NSTimer.scheduledTimerWithTimeInterval_repeats_block_(1.3, False, revert)
         except Exception:
@@ -675,6 +684,12 @@ class MainWindow(NSObject):
         visible_h = self._scroll.contentView().bounds().size.height or WIN_H
         doc_h = max(h, visible_h)
         v.setFrame_(NSMakeRect(0, 0, self._content_w, doc_h))
+        # Layer-backed: bij een historie van honderden rijen staan er ~1700 transparante,
+        # zelf-tekenende custom-views in de documentView. Zonder lagen kan de scrollview
+        # (drawsBackground=False, niet-opake content) geen copy-on-scroll doen en hertekent
+        # 'ie elke scrollstap de hele zichtbare inhoud -> hakkelen. Met wantsLayer composit
+        # de GPU cached lagen en wordt scrollen soepel. Geldt voor elke tab (goedkoop).
+        v.setWantsLayer_(True)
         self._built_w = self._content_w   # onthoud op welke breedte deze tab gebouwd is
         self._scroll.setDocumentView_(v)
         clip = self._scroll.contentView()
