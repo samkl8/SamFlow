@@ -74,7 +74,7 @@ SILENCE_RMS = 120          # speech measures ~4000, a quiet room ~40. Below this
 SOUND_CUES = True
 SHOW_HUD = True            # floating pill + menu-bar dot, see hud.py
 HUD_FULL_SCALE = 3000.0    # mic RMS that drives the bars to full height
-PAUSE_MEDIA = True         # pause Spotify/video while you dictate, see media.py
+PAUSE_MEDIA = True         # pauze Spotify/Music + demp webaudio (YouTube) tijdens dictaat, zie media.py
 SERVER_WAIT_SEC = 60       # at login, wait this long for whisper-server to warm up
 CLIPBOARD_RESTORE_SEC = 0.35
 # ----------------------------

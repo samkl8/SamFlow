@@ -123,6 +123,15 @@ Dit is de onderhoudslus van het project. Hoor je een woord dat er verkeerd uitko
 ## Regels bij het aanpassen van media.py
 - **Nooit `play` sturen zonder dat wíj gepauzeerd hebben.** `MediaGuard._paused` is die
   boekhouding. Zonder haar start een dictaat de muziek die je net zelf had uitgezet.
+- **Webcontent (YouTube) pauzeer je niet, die demp je.** MediaRemote stuurt naar de één
+  now-playing-app (vaak een al gepauzeerde Spotify), niet naar de browsertab — bewezen: pauze
+  raakte de video niet en de `play` erna startte Spotify. Bovendien klinkt webaudio onder een
+  hulp-procesnaam (`com.apple.WebKit.GPU`, "… Helper (Renderer)"), niet onder de browsernaam,
+  dus de browser-entries in `MEDIA_APPS` matchten nooit. Daarom `web_sounding()` + systeem-mute.
+  **Muten heeft z'n eigen boekhouding (`_muted`), los van `_paused`.** Zo sturen we `play` alleen
+  voor wat we écht pauzeerden, en ontdempen we nooit een gebruiker die zélf op mute stond
+  (`pause()` dempt alleen als `_output_muted()` False is). De mute is systeembreed, dus hij raakt
+  ook een gesprek — daarom gaat hij alléén aan als er webcontent klinkt, niet standaard.
 - **Leid "speelt er iets" nooit af uit de audio-IO alleen.** Spotify houdt die na een pauze
   nog ~2,6 seconden open. Apps in `SCRIPTABLE` vragen we hun eigen `player state`.
 - **AppleScript naar een app die niet draait, start die app.** Altijd de `is running`-guard
