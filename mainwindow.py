@@ -26,7 +26,7 @@ Regels (uit het buildout-plan):
 """
 import threading
 import time
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 import objc
 from AppKit import (
@@ -34,10 +34,11 @@ from AppKit import (
     NSBackingStoreBuffered, NSBezierPath, NSButton, NSColor, NSFont,
     NSFontWeightRegular, NSGradient, NSGraphicsContext, NSImage,
     NSImageScaleProportionallyUpOrDown, NSImageSymbolConfiguration, NSImageView,
+    NSLineBreakByTruncatingTail,
     NSMakePoint, NSMakeRect, NSNoBorder, NSPasteboard, NSPasteboardTypeString,
     NSScrollView, NSSearchField, NSTextAlignmentCenter, NSTextAlignmentRight,
     NSTextField, NSTextFieldRoundedBezel, NSTextView, NSTimer, NSTrackingActiveInKeyWindow,
-    NSTrackingArea, NSTrackingMouseEnteredAndExited,
+    NSTrackingArea, NSTrackingMouseEnteredAndExited, NSTrackingMouseMoved,
     NSView, NSViewHeightSizable, NSViewMinYMargin,
     NSViewWidthSizable, NSWindow, NSWindowStyleMaskClosable,
     NSWindowStyleMaskMiniaturizable, NSWindowStyleMaskResizable,
@@ -53,6 +54,7 @@ import history
 import lexicon
 import prefs
 import settings
+import snippets
 import stats
 import theme
 import ui
@@ -71,6 +73,9 @@ _MONTHS_NL = ["januari", "februari", "maart", "april", "mei", "juni", "juli",
               "augustus", "september", "oktober", "november", "december"]
 _WEEKDAYS_NL = ["maandag", "dinsdag", "woensdag", "donderdag", "vrijdag",
                 "zaterdag", "zondag"]
+_MON_ABBR = ["jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep",
+             "okt", "nov", "dec"]
+_DAYPART_PEAK = ["'s nachts", "'s ochtends", "'s middags", "'s avonds"]
 
 NAV = [
     ("Overzicht", "waveform"),
@@ -160,6 +165,18 @@ def _dur_hm(sec):
     if m < 60:
         return f"≈ {m} m"
     return f"≈ {m // 60} u {m % 60:02d} m"
+
+
+def _voice_style(wpm, avg_len):
+    """Eén eerlijke, afgeleide typering voor de stijl-chip -- geen zin óver jou, maar een
+    label uit twee gemeten getallen (gemiddelde lengte + tempo). None als er nog niets is."""
+    if not avg_len:
+        return None
+    length = "bondig" if avg_len < 20 else "helder" if avg_len < 45 else "uitgebreid"
+    if not wpm:
+        return length
+    tempo = "vlot" if wpm >= 160 else "rustig" if wpm >= 110 else "bedachtzaam"
+    return f"{length} & {tempo}"
 
 
 class _NavItem(NSView):
@@ -367,6 +384,201 @@ class _WeekChart(NSView):
                 _rgb(_CLAY, 0.40).set()
             r = NSMakeRect(bx, self._base_y, bw, max(bh, 2.0))
             NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(r, 3, 3).fill()
+
+
+_HM_ALPHA = [0.0, 0.30, 0.52, 0.76, 1.0]   # groen-doorzicht per niveau (0 = grijze chip)
+
+
+def _heatmap_layout(width):
+    """(weken, pitch) voor een heatmap van deze breedte -- één bron zodat de view en de
+    kaart-hoogte niet uit elkaar lopen. Pitch gecapt op 17 zodat de vakjes op een breed
+    venster niet log worden (dan blijft er wat witruimte rechts)."""
+    avail = width - 20.0 - 2.0
+    weeks = max(8, min(26, int(avail / 15.0)))
+    return weeks, min(17.0, avail / weeks)
+
+
+def _heatmap_height(width):
+    _, pitch = _heatmap_layout(width)
+    return 13.0 + 7 * pitch + 3.0 + 12.0    # maand-labels + rooster + gat + legenda
+
+
+class _Heatmap(NSView):
+    """De reeks als GitHub-achtige kalender-heatmap: één vakje per dag, groener naarmate
+    je meer insprak (groen = het merk). Vervangt het saaie 'Reeks: N dagen'-tegeltje; het
+    streak-getal staat nu in de kaartkop. Hover toont het woordaantal per dag -- hetzelfde
+    idee als _WeekChart, zodat je nooit hoeft te gissen zonder alle getallen vast te tonen.
+
+    Data komt uit stats.summary()['heatmap_days'] ({iso: woorden}); de view kiest zelf
+    hoeveel week-kolommen op de breedte passen en leest ontbrekende dagen als 0. Vakjes in
+    drawRect_, de dag/maand-labels als subviews (zoals _WeekChart)."""
+    def initWithFrame_days_today_(self, frame, hm_days, today):
+        self = objc.super(_Heatmap, self).initWithFrame_(frame)
+        if self is None:
+            return None
+        W = frame.size.width
+        LEFTW, self._month_h, gap = 20.0, 13.0, 3.0
+        weeks, pitch = _heatmap_layout(W)
+        cell = pitch - gap
+        self._pitch, self._cell, self._left, self._gap = pitch, cell, LEFTW, gap
+        grid_top = self._month_h
+        self._grid_h = 7 * pitch
+
+        this_monday = today - timedelta(days=today.weekday())
+        self._cells = []                       # {x,y,size,words,level,valid,dl}
+        month_marks = []                       # (col_x, "jul") -- eerste kolom van een maand
+        last_mon = None
+        for col in range(weeks):
+            col_monday = this_monday - timedelta(days=(weeks - 1 - col) * 7)
+            cx = LEFTW + col * pitch
+            if col_monday.month != last_mon:
+                month_marks.append((cx, _MON_ABBR[col_monday.month - 1]))
+                last_mon = col_monday.month
+            for row in range(7):
+                day = col_monday + timedelta(days=row)
+                y = grid_top + row * pitch
+                if day > today:
+                    self._cells.append({"x": cx, "y": y, "size": cell, "valid": False,
+                                        "words": 0, "level": 0, "dl": ""})
+                    continue
+                words = int(hm_days.get(day.isoformat(), 0))
+                dl = f"{_DAYS_NL[day.weekday()]} {day.day} {_MON_ABBR[day.month - 1]}"
+                self._cells.append({"x": cx, "y": y, "size": cell, "valid": True,
+                                    "words": words, "level": 0, "dl": dl})
+        # niveaus: 0 voor lege dagen, anders 1..4 t.o.v. een robuuste bovengrens (85e
+        # percentiel van de niet-lege dagen, zodat één uitschieter niet alles vervlakt).
+        nz = sorted(c["words"] for c in self._cells if c["valid"] and c["words"] > 0)
+        cap = nz[int(len(nz) * 0.85)] if nz else 1
+        cap = max(cap, 1)
+        for c in self._cells:
+            if c["valid"] and c["words"] > 0:
+                c["level"] = min(4, max(1, int(round(c["words"] / cap * 4))))
+
+        # dag-labels links (ma/wo/vr, zoals de mockup), maand-labels boven
+        for row in (0, 2, 4):
+            dl = ui.label(_DAYS_NL[row], 8.5, color=theme.FAINT)
+            dl.setFrame_(NSMakeRect(0, grid_top + row * pitch - 1, LEFTW - 3, 12))
+            dl.setAlignment_(NSTextAlignmentRight)
+            self.addSubview_(dl)
+        for cx, txt in month_marks:
+            ml = ui.label(txt, 9, color=theme.FAINT)
+            ml.setFrame_(NSMakeRect(cx, 0, 30, 11))
+            self.addSubview_(ml)
+
+        # legenda rechtsonder: minder [▫▫▫▫] meer
+        self._legend_y = grid_top + self._grid_h + 3
+        sw, sgap = 10.0, 2.5
+        legend_w = 5 * sw + 4 * sgap
+        less = ui.label("minder", 9, color=theme.FAINT)
+        less.sizeToFit()
+        lw = less.frame().size.width
+        more = ui.label("meer", 9, color=theme.FAINT)
+        more.sizeToFit()
+        mw = more.frame().size.width
+        self._legend_x = W - 2 - mw - 4 - legend_w - 4 - lw
+        less.setFrame_(NSMakeRect(self._legend_x, self._legend_y - 1, lw, 12))
+        self.addSubview_(less)
+        self._legend_sw_x = self._legend_x + lw + 4
+        more.setFrame_(NSMakeRect(self._legend_sw_x + legend_w + 4, self._legend_y - 1, mw + 2, 12))
+        self.addSubview_(more)
+        self._legend_sw, self._legend_sgap = sw, sgap
+
+        # hover-tooltip: grafiet-pil (drawRect_) + los tekst-label erop. Binnen de bounds
+        # geklemd, dus geen clipping door een laag-gebackte ouder (de scroll-documentView).
+        self._hover = -1
+        self._tip_rect = None
+        self._tip_label = ui.label("", 11, "medium", color=_white(0.95))
+        self._tip_label.setHidden_(True)
+        self.addSubview_(self._tip_label)
+        return self
+
+    def isFlipped(self):
+        return True
+
+    def updateTrackingAreas(self):
+        # Eén tracking-area over het hele rooster met MouseMoved -- die optie levert
+        # mouseMoved_ óók zonder acceptsMouseMovedEvents op het venster (dat staat uit).
+        objc.super(_Heatmap, self).updateTrackingAreas()
+        for ta in list(self.trackingAreas()):
+            self.removeTrackingArea_(ta)
+        opts = (NSTrackingMouseMoved | NSTrackingMouseEnteredAndExited
+                | NSTrackingActiveInKeyWindow)
+        self.addTrackingArea_(NSTrackingArea.alloc()
+            .initWithRect_options_owner_userInfo_(self.bounds(), opts, self, None))
+
+    def _cell_at(self, event):
+        p = self.convertPoint_fromView_(event.locationInWindow(), None)
+        col = int((p.x - self._left) / self._pitch) if p.x >= self._left else -1
+        row = int((p.y - self._month_h) / self._pitch) if p.y >= self._month_h else -1
+        if col < 0 or row < 0 or row > 6:
+            return -1
+        idx = col * 7 + row
+        if 0 <= idx < len(self._cells):
+            c = self._cells[idx]
+            # binnen het vakje zelf, niet in de tussenruimte
+            if c["valid"] and c["x"] <= p.x <= c["x"] + c["size"] and c["y"] <= p.y <= c["y"] + c["size"]:
+                return idx
+        return -1
+
+    def mouseMoved_(self, event):
+        self._set_hover(self._cell_at(event))
+
+    def mouseExited_(self, _event):
+        self._set_hover(-1)
+
+    def _set_hover(self, idx):
+        if idx == self._hover:
+            return
+        self._hover = idx
+        c = self._cells[idx] if 0 <= idx < len(self._cells) else None
+        if c and c["valid"]:
+            txt = (f'{c["dl"]} · {_nl_int(c["words"])} woorden' if c["words"]
+                   else f'{c["dl"]} · geen dictaat')
+            self._tip_label.setStringValue_(txt)
+            self._tip_label.sizeToFit()
+            tw = self._tip_label.frame().size.width
+            tip_w, tip_h = tw + 16, 20.0
+            b = self.bounds()
+            tx = c["x"] + c["size"] / 2 - tip_w / 2
+            tx = max(0.0, min(tx, b.size.width - tip_w))
+            ty = c["y"] - tip_h - 4
+            if ty < 0:
+                ty = c["y"] + c["size"] + 4
+            self._tip_rect = (tx, ty, tip_w, tip_h)
+            self._tip_label.setFrame_(NSMakeRect(tx + 8, ty + (tip_h - 15) / 2, tw, 15))
+            self._tip_label.setHidden_(False)
+        else:
+            self._tip_rect = None
+            self._tip_label.setHidden_(True)
+        self.setNeedsDisplay_(True)
+
+    def drawRect_(self, _rect):
+        for i, c in enumerate(self._cells):
+            if not c["valid"]:
+                continue
+            r = NSMakeRect(c["x"], c["y"], c["size"], c["size"])
+            path = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(r, 2.5, 2.5)
+            (theme.CHIP if c["level"] == 0
+             else theme.GREEN.colorWithAlphaComponent_(_HM_ALPHA[c["level"]])).set()
+            path.fill()
+            if i == self._hover:
+                _rgb(_CLAY, 1.0).set()
+                path.setLineWidth_(1.5)
+                path.stroke()
+        # legenda-vakjes
+        x = self._legend_sw_x
+        for lvl in range(5):
+            r = NSMakeRect(x, self._legend_y, self._legend_sw, self._legend_sw)
+            (theme.CHIP if lvl == 0
+             else theme.GREEN.colorWithAlphaComponent_(_HM_ALPHA[lvl])).set()
+            NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(r, 2.0, 2.0).fill()
+            x += self._legend_sw + self._legend_sgap
+        # tooltip-pil (grafiet), tekst-label ligt er als subview bovenop
+        if self._tip_rect is not None:
+            tx, ty, tw, th = self._tip_rect
+            theme.GRAPHITE.set()
+            NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+                NSMakeRect(tx, ty, tw, th), 6, 6).fill()
 
 
 class _Chip(NSView):
@@ -995,6 +1207,7 @@ class MainWindow(NSObject):
         self._sugg = []
         self._term_list = []
         self._map_list = []
+        self._snip_list = []
         y = 24
         title = ui.label("Woordenlijst", 19, "bold")
         title.setFrame_(NSMakeRect(ui.PAD, y, inner_w, 24))
@@ -1139,6 +1352,57 @@ class MainWindow(NSObject):
         addc.setFrame_(NSMakeRect(ui.PAD + 2, y + 8, 170, 20))
         v.addSubview_(addc)
         y += 30
+        y += ui.SEC_GAP
+
+        # 4) Snippets: zeg een trigger, plak een blok. Zelfde in-app-lijn als de rest;
+        #    minimale rijen (trigger-pil -> expansie). Opslag lokaal in App Support, per
+        #    dictaat herlezen (snippets.py) -- een nieuwe snippet werkt meteen.
+        y = ui.glabel(v, ui.PAD, y, inner_w, "Snippets", "zeg een trigger, plak een blok")
+        snip_items = snippets.items()
+        if not snip_items:
+            y = ui.card_group(v, ui.PAD, y, inner_w, [40], lambda c, i, top, w, _h:
+                              self._empty_row(c, top, w,
+                                              "Nog geen snippets — bijv. “mijn linkedin” → je URL."))
+        else:
+            def fill_snip(c, idx, top, w, _h):
+                trig, exp = snip_items[idx]
+                self._snip_list.append(trig)
+                meas = ui.label(trig, 12, "medium")
+                meas.sizeToFit()
+                tw = min(meas.frame().size.width, 190)
+                chip_w = tw + 22
+                chip = _Chip.alloc().initWithFrame_style_(
+                    NSMakeRect(14, top + 8, chip_w, 24), "solid")
+                cl = ui.label(trig, 12, "medium", color=theme.TEXT)
+                cl.setFrame_(NSMakeRect(11, 4, tw, 16))
+                chip.addSubview_(cl)
+                c.addSubview_(chip)
+                arr = ui.label("→", 12, color=theme.FAINT)
+                ax = 14 + chip_w + 8
+                arr.setFrame_(NSMakeRect(ax, top + 12, 16, 16))
+                c.addSubview_(arr)
+                wis = NSButton.buttonWithTitle_target_action_("wis", self, "snipRemove:")
+                wis.setBordered_(False)
+                wis.setFont_(NSFont.systemFontOfSize_(11.5))
+                wis.setContentTintColor_(_rgb(_CLAY))
+                wis.setTag_(idx)
+                wis.setFrame_(NSMakeRect(w - 12 - 40, top + 10, 40, 20))
+                c.addSubview_(wis)
+                ex = ax + 22
+                expl = ui.label(" ".join(exp.split()), 12.5, color=theme.TEXT2)
+                expl.setUsesSingleLineMode_(True)
+                expl.cell().setLineBreakMode_(NSLineBreakByTruncatingTail)
+                expl.setFrame_(NSMakeRect(ex, top + 12, max(60.0, w - ex - 58), 17))
+                c.addSubview_(expl)
+
+            y = ui.card_group(v, ui.PAD, y, inner_w, [40] * len(snip_items), fill_snip)
+        adds = NSButton.buttonWithTitle_target_action_("+ Nieuwe snippet", self, "snipNew:")
+        adds.setBordered_(False)
+        adds.setFont_(NSFont.systemFontOfSize_(12))
+        adds.setContentTintColor_(_rgb(_CLAY))
+        adds.setFrame_(NSMakeRect(ui.PAD + 2, y + 8, 170, 20))
+        v.addSubview_(adds)
+        y += 30
         y += ui.PAD
         return v, y
 
@@ -1218,6 +1482,17 @@ class MainWindow(NSObject):
             lexicon.remove_mapping(self._map_list[i])
             self.show_tab(2)
 
+    def snipNew_(self, _sender):
+        # "+ Nieuwe snippet": open het gebrande paneel met een trigger-veld + een
+        # meerregelige expansie (handtekeningen mogen meerdere regels beslaan).
+        self._present_sheet("snippet")
+
+    def snipRemove_(self, sender):
+        i = sender.tag()
+        if 0 <= i < len(self._snip_list):
+            snippets.remove(self._snip_list[i])
+            self.show_tab(2)
+
     # ---------- gebrand invoer-paneel (vervangt de kale NSAlert) ----------
     @objc.python_method
     def _rounded_field(self, placeholder, w):
@@ -1249,6 +1524,9 @@ class MainWindow(NSObject):
         elif mode == "correct":
             title = f"“{word}” toevoegen of corrigeren"
             sub = "Laat staan om zo toe te voegen, of pas aan naar de juiste schrijfwijze."
+        elif mode == "snippet":
+            title = "Nieuwe snippet"
+            sub = "Zeg de trigger tijdens een dictaat; SamFlow plakt de expansie ervoor in de plaats."
         else:
             title = "Nieuwe correctie"
             sub = "Als SamFlow een woord fonetisch net verkeerd hoort."
@@ -1307,6 +1585,42 @@ class MainWindow(NSObject):
             self._sheet_canon = canon
             heard.setNextKeyView_(canon)
             y += 40
+        elif mode == "snippet":
+            trig = self._rounded_field("Trigger — wat je zegt (bijv. mijn linkedin)", iw)
+            trig.setFrameOrigin_(NSMakePoint(P, y))
+            v.addSubview_(trig)
+            self._sheet_heard = trig
+            y += 34
+            hint = ui.label("Kies iets dat je normaal niet per ongeluk zegt.", 11, color=theme.FAINT)
+            hint.setFrame_(NSMakeRect(P + 2, y, iw, 15))
+            v.addSubview_(hint)
+            y += 22
+            lab = ui.label("Wordt geplakt:", 11.5, color=theme.TEXT2)
+            lab.setFrame_(NSMakeRect(P, y, iw, 15))
+            v.addSubview_(lab)
+            y += 20
+            fh = 96
+            v.addSubview_(_card(NSMakeRect(P, y, iw, fh)))
+            sc = NSScrollView.alloc().initWithFrame_(NSMakeRect(P + 2, y + 2, iw - 4, fh - 4))
+            sc.setDrawsBackground_(False)
+            sc.setBorderType_(NSNoBorder)
+            sc.setHasVerticalScroller_(True)
+            tv = NSTextView.alloc().initWithFrame_(NSMakeRect(0, 0, iw - 4, fh - 4))
+            tv.setDrawsBackground_(False)
+            tv.setRichText_(False)
+            tv.setFont_(NSFont.systemFontOfSize_(13))
+            tv.setTextColor_(theme.TEXT)
+            tv.setInsertionPointColor_(theme.CLAY)
+            tv.setTextContainerInset_((8, 8))
+            tv.setAutomaticQuoteSubstitutionEnabled_(False)
+            tv.setAutomaticDashSubstitutionEnabled_(False)
+            tv.setAutomaticTextReplacementEnabled_(False)
+            tv.setAutomaticSpellingCorrectionEnabled_(False)
+            sc.setDocumentView_(tv)
+            v.addSubview_(sc)
+            self._sheet_text = tv
+            trig.setNextKeyView_(tv)
+            y += fh + 8
         else:                                    # correct: één veld, voorgevuld
             field = self._rounded_field("", iw)
             field.setStringValue_(word)
@@ -1372,6 +1686,12 @@ class MainWindow(NSObject):
             if heard and len(canon) >= 2:        # add_mapping weigert een te kort doel zelf ook
                 lexicon.add_mapping(heard, canon)
                 self.show_tab(2)
+        elif mode == "snippet":
+            trig = self._sheet_heard.stringValue().strip() if self._sheet_heard else ""
+            exp = self._sheet_text.string().strip() if self._sheet_text is not None else ""
+            self._end_sheet()
+            if trig and exp and snippets.add(trig, exp):
+                self.show_tab(2)
         else:                                    # correct: laat je 't staan -> accept,
             target = self._sheet_heard.stringValue().strip() if self._sheet_heard else ""
             word = self._sheet_word              # pas je 't aan -> map_to (gehoord -> canoniek)
@@ -1431,6 +1751,114 @@ class MainWindow(NSObject):
         s.setFrame_(NSMakeRect(13, 55, w - 26, 15))
         card.addSubview_(s)
         v.addSubview_(card)
+
+    # ---------- Jouw stem (reflectieve samenvatting, net boven Recent) ----------
+    @objc.python_method
+    def _voice_num(self, card, x, w, numtext, unit, sub):
+        num = ui.label(numtext, 22, "bold")
+        num.sizeToFit()
+        nw = min(num.frame().size.width, w - 34)
+        num.setFrame_(NSMakeRect(x, 40, nw, 27))
+        card.addSubview_(num)
+        u = ui.label(unit, 12, color=theme.FAINT)
+        u.setFrame_(NSMakeRect(x + nw + 4, 49, 54, 16))
+        card.addSubview_(u)
+        sl = ui.label(sub, 11, color=theme.FAINT)
+        sl.setFrame_(NSMakeRect(x, 66, w - 8, 14))
+        card.addSubview_(sl)
+
+    @objc.python_method
+    def _voice_card(self, v, y, inner_w, s):
+        wpm = s.get("wpm") if s else None
+        avg_len = s.get("avg_len") if s else None
+        dayparts = s.get("dayparts") if s else None
+        peak = s.get("peak_daypart") if s else None
+        try:
+            top = history.top_words(30, 5) if settings.get("history_enabled") else []
+        except Exception:
+            top = []
+        has_words = len(top) > 0
+        n = len(top)
+
+        words_top = 118
+        words_bottom = words_top + (n * 22 if has_words else 20)
+        style = _voice_style(wpm, avg_len)
+        chip_y = words_bottom + 8
+        card_h = chip_y + (26 if style else 0) + 12
+
+        card = _card(NSMakeRect(ui.PAD, y, inner_w, card_h))
+        title = ui.label("Jouw stem", 13, "bold")
+        title.setFrame_(NSMakeRect(14, 12, inner_w - 180, 18))
+        card.addSubview_(title)
+        note = ui.label("alleen op deze Mac", 11, color=theme.FAINT)
+        note.setAlignment_(NSTextAlignmentRight)
+        note.setFrame_(NSMakeRect(inner_w - 14 - 170, 14, 170, 15))
+        card.addSubview_(note)
+
+        # feiten-rij: spreektempo | gem. lengte | piekmoment (dagdeel-staafjes)
+        col_w = (inner_w - 28) / 3.0
+        x0, x1, x2 = 14.0, 14.0 + col_w, 14.0 + 2 * col_w
+        card.addSubview_(ui.fill(NSMakeRect(x1 - 1, 44, 0.5, 30), theme.LINE))
+        card.addSubview_(ui.fill(NSMakeRect(x2 - 1, 44, 0.5, 30), theme.LINE))
+        self._voice_num(card, x0, col_w, _nl_int(round(wpm)) if wpm else "—", "w/min", "spreektempo")
+        self._voice_num(card, x1 + 14, col_w, _nl_int(round(avg_len)) if avg_len else "—", "wrd", "gem. per dictaat")
+        px = x2 + 14
+        if dayparts and any(dayparts):
+            mx = max(dayparts) or 1
+            bw, gap, base_y, max_h = 9.0, 5.0, 62.0, 18.0
+            for i in range(4):
+                h = 3 + (dayparts[i] / mx) * max_h
+                col = _rgb(_CLAY, 1.0) if i == peak else _rgb(_CLAY, 0.38)
+                card.addSubview_(ui.fill(NSMakeRect(px + i * (bw + gap), base_y - h, bw, h), col, 2))
+            peaktxt = f"piek — {_DAYPART_PEAK[peak]}" if peak is not None else "piekmoment"
+        else:
+            peaktxt = "nog geen ritme"
+        pl = ui.label(peaktxt, 11, color=theme.FAINT)
+        pl.setFrame_(NSMakeRect(x2 + 14, 66, col_w, 14))
+        card.addSubview_(pl)
+
+        card.addSubview_(ui.hline(14, 92, inner_w - 28))
+        ui.glabel(card, 14, 100, inner_w - 28, "Meest gezegd", "30 dagen")
+
+        if has_words:
+            maxc = max(c for _, c in top) or 1
+            for i, (word, cnt) in enumerate(top):
+                ry = words_top + i * 22
+                wlab = ui.label(word, 12.5)
+                wlab.setUsesSingleLineMode_(True)
+                wlab.cell().setLineBreakMode_(NSLineBreakByTruncatingTail)
+                wlab.setFrame_(NSMakeRect(16, ry, 108, 16))
+                card.addSubview_(wlab)
+                tx, tw = 132.0, inner_w - 132 - 62
+                card.addSubview_(ui.fill(NSMakeRect(tx, ry + 5, tw, 5), theme.CHIP, 2))
+                card.addSubview_(ui.fill(NSMakeRect(tx, ry + 5, max(4.0, tw * cnt / maxc), 5), _rgb(_CLAY, 0.55), 2))
+                cl = ui.label(_nl_int(cnt), 11, color=theme.FAINT)
+                cl.setAlignment_(NSTextAlignmentRight)
+                cl.setFrame_(NSMakeRect(inner_w - 14 - 46, ry, 46, 15))
+                card.addSubview_(cl)
+        else:
+            inv = ui.label("Zet historie aan om je meest gebruikte woorden te zien.",
+                           12, color=theme.TEXT2)
+            inv.setFrame_(NSMakeRect(16, words_top, inner_w - 32, 16))
+            card.addSubview_(inv)
+
+        if style:
+            klbl = ui.label("STIJL", 9.5, "bold", color=theme.FAINT)
+            klbl.sizeToFit()
+            kw = klbl.frame().size.width
+            dlbl = ui.label(style, 11.5, "medium")
+            dlbl.sizeToFit()
+            dw = dlbl.frame().size.width
+            chip = _Chip.alloc().initWithFrame_style_(
+                NSMakeRect(14, chip_y, 12 + kw + 8 + dw + 12, 24), "solid")
+            klbl.setFrame_(NSMakeRect(12, 7, kw, 12))
+            chip.addSubview_(klbl)
+            dlbl.setFrame_(NSMakeRect(12 + kw + 8, 4, dw, 16))
+            chip.addSubview_(dlbl)
+            card.addSubview_(chip)
+
+        v.addSubview_(card)
+        return y + card_h + 20
 
     @objc.python_method
     def _overzicht_view(self):
@@ -1532,19 +1960,21 @@ class MainWindow(NSObject):
             threading.Thread(target=self._check_server_bg, daemon=True).start()
         y += hero_h + 16
 
-        # --- stat-tegels: 4-op-een-rij als het breed genoeg is, anders terug naar 2x2 ---
+        # --- stat-tegels: 4-op-een-rij als het breed genoeg is, anders 2x2 (even grid, geen
+        #     gat). Het oude 'Reeks'-tegeltje is vervangen door 'Totaal gedicteerd' -- de reeks
+        #     zelf woont nu in de heatmap hieronder. ---
         if s and s["delta"] is not None:
             d = s["delta"]
             wk_sub = f"{'▲' if d >= 0 else '▼'} {abs(d) * 100:.0f}% t.o.v. vorige week"
         else:
             wk_sub = "t.o.v. vorige week"
         fastest = s["fastest"] if s else None
-        streak = s["streak"] if s else 0
+        total_words = s.get("total_words", 0) if s else 0
         tiles = [
             ("Woorden deze week", _nl_int(s["words_week"]) if s else "0", wk_sub),
             ("Tijd bespaard", _dur_hm(s["saved_sec"]) if s else "≈ 0 m", "t.o.v. typen (40 wpm)"),
             ("Snelste dictaat", f"{_nl_dec(fastest, 1)} s" if fastest else "—", "transcriptietijd"),
-            ("Reeks", f"{streak} {'dag' if streak == 1 else 'dagen'}", "aaneengesloten dagen"),
+            ("Totaal gedicteerd", _nl_int(total_words), "woorden sinds je begon"),
         ]
         gap, tile_h = 12, 76
         cols = 4 if inner_w >= STATS_4COL_W else 2
@@ -1555,6 +1985,31 @@ class MainWindow(NSObject):
                             col_w, lbl, val, sub)
         rows = (len(tiles) + cols - 1) // cols
         y += rows * tile_h + (rows - 1) * 10 + 16
+
+        # --- reeks-heatmap: vervangt het oude 'Reeks'-tegeltje. Het streak-getal staat nu
+        #     in de kaartkop, met de langste reeks als record ernaast; hover -> woorden/dag.
+        #     Alles uit stats.summary() (heatmap_days), geen extra schijf-lezing. ---
+        streak = s["streak"] if s else 0
+        longest = s.get("longest_streak", 0) if s else 0
+        hm_days = s["heatmap_days"] if s else {}
+        hm_w = inner_w - 24
+        hm_h = _heatmap_height(hm_w)
+        card_h = 34 + hm_h + 12
+        hm_card = _card(NSMakeRect(ui.PAD, y, inner_w, card_h))
+        hct = ui.label(f"Reeks — {streak} {'dag' if streak == 1 else 'dagen'} op rij", 13, "bold")
+        hct.setFrame_(NSMakeRect(14, 12, inner_w - 170, 18))
+        hm_card.addSubview_(hct)
+        if longest:
+            hcr = ui.label(f"langste · {longest} {'dag' if longest == 1 else 'dagen'}", 11,
+                           color=theme.FAINT)
+            hcr.setAlignment_(NSTextAlignmentRight)
+            hcr.setFrame_(NSMakeRect(inner_w - 14 - 150, 14, 150, 15))
+            hm_card.addSubview_(hcr)
+        hm = _Heatmap.alloc().initWithFrame_days_today_(
+            NSMakeRect(12, 34, hm_w, hm_h), hm_days, now.date())
+        hm_card.addSubview_(hm)
+        v.addSubview_(hm_card)
+        y += card_h + 16
 
         # --- week-staafgrafiek ---
         chart_card = _card(NSMakeRect(ui.PAD, y, inner_w, 160))
@@ -1572,6 +2027,9 @@ class MainWindow(NSObject):
         chart_card.addSubview_(chart)
         v.addSubview_(chart_card)
         y += 160 + 20
+
+        # --- Jouw stem: reflectieve samenvatting (feitelijk, lokaal), net boven Recent ---
+        y = self._voice_card(v, y, inner_w, s)
 
         # --- Recent (alleen als historie aanstaat; anders leeg, zoals vroeger) ---
         if settings.get("history_enabled"):
