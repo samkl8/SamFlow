@@ -89,6 +89,24 @@ def _val(data, d, key, default=0):
     return data.get(d.isoformat(), {}).get(key, default) or default
 
 
+def _longest_streak(data):
+    """De langste aaneengesloten reeks dagen met >=1 dictaat over alle bewaarde data --
+    het record dat naast de huidige reeks staat ('langste · N dagen'). Puur uit de
+    datum-sleutels afgeleid; geen extra opslag."""
+    days = sorted(k for k, v in data.items() if int(v.get("dictations", 0)) > 0)
+    best = run = 0
+    prev = None
+    for iso in days:
+        try:
+            cur = date.fromisoformat(iso)
+        except ValueError:
+            continue
+        run = run + 1 if (prev is not None and (cur - prev).days == 1) else 1
+        best = max(best, run)
+        prev = cur
+    return best
+
+
 def summary():
     """Een momentopname voor het dashboard: alle afgeleiden in één keer, uit één
     bestandslezing. De UI-laag formatteert (Nederlandse komma's, "u/m")."""
@@ -124,6 +142,17 @@ def summary():
 
     total_dictations = sum(int(v.get("dictations", 0)) for v in data.values())
 
+    # heatmap-data: dag-woorden voor de laatste 26 weken (alleen niet-lege dagen, klein
+    # gehouden). De view kiest zelf hoeveel week-kolommen 'ie toont op de vensterbreedte;
+    # ontbrekende dagen leest 'ie als 0. Plus de langste reeks als record naast de huidige.
+    hm_days = {}
+    dd = today - timedelta(days=181)
+    while dd <= today:
+        wv = int(_val(data, dd, "words"))
+        if wv:
+            hm_days[dd.isoformat()] = wv
+        dd += timedelta(days=1)
+
     return {
         "words_today": words_today,
         "words_week": words_week,
@@ -134,4 +163,6 @@ def summary():
         "week_words": week_words,     # 7 ints, maandag..zondag
         "today_index": today.weekday(),
         "total_dictations": total_dictations,   # goedkope 'is er iets veranderd'-signatuur
+        "heatmap_days": hm_days,      # {iso-datum: woorden} voor niet-lege dagen, 26 wk
+        "longest_streak": _longest_streak(data),
     }

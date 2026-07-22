@@ -26,7 +26,7 @@ Regels (uit het buildout-plan):
 """
 import threading
 import time
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 import objc
 from AppKit import (
@@ -37,7 +37,7 @@ from AppKit import (
     NSMakePoint, NSMakeRect, NSNoBorder, NSPasteboard, NSPasteboardTypeString,
     NSScrollView, NSSearchField, NSTextAlignmentCenter, NSTextAlignmentRight,
     NSTextField, NSTextFieldRoundedBezel, NSTextView, NSTimer, NSTrackingActiveInKeyWindow,
-    NSTrackingArea, NSTrackingMouseEnteredAndExited,
+    NSTrackingArea, NSTrackingMouseEnteredAndExited, NSTrackingMouseMoved,
     NSView, NSViewHeightSizable, NSViewMinYMargin,
     NSViewWidthSizable, NSWindow, NSWindowStyleMaskClosable,
     NSWindowStyleMaskMiniaturizable, NSWindowStyleMaskResizable,
@@ -71,6 +71,8 @@ _MONTHS_NL = ["januari", "februari", "maart", "april", "mei", "juni", "juli",
               "augustus", "september", "oktober", "november", "december"]
 _WEEKDAYS_NL = ["maandag", "dinsdag", "woensdag", "donderdag", "vrijdag",
                 "zaterdag", "zondag"]
+_MON_ABBR = ["jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep",
+             "okt", "nov", "dec"]
 
 NAV = [
     ("Overzicht", "waveform"),
@@ -367,6 +369,201 @@ class _WeekChart(NSView):
                 _rgb(_CLAY, 0.40).set()
             r = NSMakeRect(bx, self._base_y, bw, max(bh, 2.0))
             NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(r, 3, 3).fill()
+
+
+_HM_ALPHA = [0.0, 0.30, 0.52, 0.76, 1.0]   # groen-doorzicht per niveau (0 = grijze chip)
+
+
+def _heatmap_layout(width):
+    """(weken, pitch) voor een heatmap van deze breedte -- één bron zodat de view en de
+    kaart-hoogte niet uit elkaar lopen. Pitch gecapt op 17 zodat de vakjes op een breed
+    venster niet log worden (dan blijft er wat witruimte rechts)."""
+    avail = width - 20.0 - 2.0
+    weeks = max(8, min(26, int(avail / 15.0)))
+    return weeks, min(17.0, avail / weeks)
+
+
+def _heatmap_height(width):
+    _, pitch = _heatmap_layout(width)
+    return 13.0 + 7 * pitch + 3.0 + 12.0    # maand-labels + rooster + gat + legenda
+
+
+class _Heatmap(NSView):
+    """De reeks als GitHub-achtige kalender-heatmap: één vakje per dag, groener naarmate
+    je meer insprak (groen = het merk). Vervangt het saaie 'Reeks: N dagen'-tegeltje; het
+    streak-getal staat nu in de kaartkop. Hover toont het woordaantal per dag -- hetzelfde
+    idee als _WeekChart, zodat je nooit hoeft te gissen zonder alle getallen vast te tonen.
+
+    Data komt uit stats.summary()['heatmap_days'] ({iso: woorden}); de view kiest zelf
+    hoeveel week-kolommen op de breedte passen en leest ontbrekende dagen als 0. Vakjes in
+    drawRect_, de dag/maand-labels als subviews (zoals _WeekChart)."""
+    def initWithFrame_days_today_(self, frame, hm_days, today):
+        self = objc.super(_Heatmap, self).initWithFrame_(frame)
+        if self is None:
+            return None
+        W = frame.size.width
+        LEFTW, self._month_h, gap = 20.0, 13.0, 3.0
+        weeks, pitch = _heatmap_layout(W)
+        cell = pitch - gap
+        self._pitch, self._cell, self._left, self._gap = pitch, cell, LEFTW, gap
+        grid_top = self._month_h
+        self._grid_h = 7 * pitch
+
+        this_monday = today - timedelta(days=today.weekday())
+        self._cells = []                       # {x,y,size,words,level,valid,dl}
+        month_marks = []                       # (col_x, "jul") -- eerste kolom van een maand
+        last_mon = None
+        for col in range(weeks):
+            col_monday = this_monday - timedelta(days=(weeks - 1 - col) * 7)
+            cx = LEFTW + col * pitch
+            if col_monday.month != last_mon:
+                month_marks.append((cx, _MON_ABBR[col_monday.month - 1]))
+                last_mon = col_monday.month
+            for row in range(7):
+                day = col_monday + timedelta(days=row)
+                y = grid_top + row * pitch
+                if day > today:
+                    self._cells.append({"x": cx, "y": y, "size": cell, "valid": False,
+                                        "words": 0, "level": 0, "dl": ""})
+                    continue
+                words = int(hm_days.get(day.isoformat(), 0))
+                dl = f"{_DAYS_NL[day.weekday()]} {day.day} {_MON_ABBR[day.month - 1]}"
+                self._cells.append({"x": cx, "y": y, "size": cell, "valid": True,
+                                    "words": words, "level": 0, "dl": dl})
+        # niveaus: 0 voor lege dagen, anders 1..4 t.o.v. een robuuste bovengrens (85e
+        # percentiel van de niet-lege dagen, zodat één uitschieter niet alles vervlakt).
+        nz = sorted(c["words"] for c in self._cells if c["valid"] and c["words"] > 0)
+        cap = nz[int(len(nz) * 0.85)] if nz else 1
+        cap = max(cap, 1)
+        for c in self._cells:
+            if c["valid"] and c["words"] > 0:
+                c["level"] = min(4, max(1, int(round(c["words"] / cap * 4))))
+
+        # dag-labels links (ma/wo/vr, zoals de mockup), maand-labels boven
+        for row in (0, 2, 4):
+            dl = ui.label(_DAYS_NL[row], 8.5, color=theme.FAINT)
+            dl.setFrame_(NSMakeRect(0, grid_top + row * pitch - 1, LEFTW - 3, 12))
+            dl.setAlignment_(NSTextAlignmentRight)
+            self.addSubview_(dl)
+        for cx, txt in month_marks:
+            ml = ui.label(txt, 9, color=theme.FAINT)
+            ml.setFrame_(NSMakeRect(cx, 0, 30, 11))
+            self.addSubview_(ml)
+
+        # legenda rechtsonder: minder [▫▫▫▫] meer
+        self._legend_y = grid_top + self._grid_h + 3
+        sw, sgap = 10.0, 2.5
+        legend_w = 5 * sw + 4 * sgap
+        less = ui.label("minder", 9, color=theme.FAINT)
+        less.sizeToFit()
+        lw = less.frame().size.width
+        more = ui.label("meer", 9, color=theme.FAINT)
+        more.sizeToFit()
+        mw = more.frame().size.width
+        self._legend_x = W - 2 - mw - 4 - legend_w - 4 - lw
+        less.setFrame_(NSMakeRect(self._legend_x, self._legend_y - 1, lw, 12))
+        self.addSubview_(less)
+        self._legend_sw_x = self._legend_x + lw + 4
+        more.setFrame_(NSMakeRect(self._legend_sw_x + legend_w + 4, self._legend_y - 1, mw + 2, 12))
+        self.addSubview_(more)
+        self._legend_sw, self._legend_sgap = sw, sgap
+
+        # hover-tooltip: grafiet-pil (drawRect_) + los tekst-label erop. Binnen de bounds
+        # geklemd, dus geen clipping door een laag-gebackte ouder (de scroll-documentView).
+        self._hover = -1
+        self._tip_rect = None
+        self._tip_label = ui.label("", 11, "medium", color=_white(0.95))
+        self._tip_label.setHidden_(True)
+        self.addSubview_(self._tip_label)
+        return self
+
+    def isFlipped(self):
+        return True
+
+    def updateTrackingAreas(self):
+        # Eén tracking-area over het hele rooster met MouseMoved -- die optie levert
+        # mouseMoved_ óók zonder acceptsMouseMovedEvents op het venster (dat staat uit).
+        objc.super(_Heatmap, self).updateTrackingAreas()
+        for ta in list(self.trackingAreas()):
+            self.removeTrackingArea_(ta)
+        opts = (NSTrackingMouseMoved | NSTrackingMouseEnteredAndExited
+                | NSTrackingActiveInKeyWindow)
+        self.addTrackingArea_(NSTrackingArea.alloc()
+            .initWithRect_options_owner_userInfo_(self.bounds(), opts, self, None))
+
+    def _cell_at(self, event):
+        p = self.convertPoint_fromView_(event.locationInWindow(), None)
+        col = int((p.x - self._left) / self._pitch) if p.x >= self._left else -1
+        row = int((p.y - self._month_h) / self._pitch) if p.y >= self._month_h else -1
+        if col < 0 or row < 0 or row > 6:
+            return -1
+        idx = col * 7 + row
+        if 0 <= idx < len(self._cells):
+            c = self._cells[idx]
+            # binnen het vakje zelf, niet in de tussenruimte
+            if c["valid"] and c["x"] <= p.x <= c["x"] + c["size"] and c["y"] <= p.y <= c["y"] + c["size"]:
+                return idx
+        return -1
+
+    def mouseMoved_(self, event):
+        self._set_hover(self._cell_at(event))
+
+    def mouseExited_(self, _event):
+        self._set_hover(-1)
+
+    def _set_hover(self, idx):
+        if idx == self._hover:
+            return
+        self._hover = idx
+        c = self._cells[idx] if 0 <= idx < len(self._cells) else None
+        if c and c["valid"]:
+            txt = (f'{c["dl"]} · {_nl_int(c["words"])} woorden' if c["words"]
+                   else f'{c["dl"]} · geen dictaat')
+            self._tip_label.setStringValue_(txt)
+            self._tip_label.sizeToFit()
+            tw = self._tip_label.frame().size.width
+            tip_w, tip_h = tw + 16, 20.0
+            b = self.bounds()
+            tx = c["x"] + c["size"] / 2 - tip_w / 2
+            tx = max(0.0, min(tx, b.size.width - tip_w))
+            ty = c["y"] - tip_h - 4
+            if ty < 0:
+                ty = c["y"] + c["size"] + 4
+            self._tip_rect = (tx, ty, tip_w, tip_h)
+            self._tip_label.setFrame_(NSMakeRect(tx + 8, ty + (tip_h - 15) / 2, tw, 15))
+            self._tip_label.setHidden_(False)
+        else:
+            self._tip_rect = None
+            self._tip_label.setHidden_(True)
+        self.setNeedsDisplay_(True)
+
+    def drawRect_(self, _rect):
+        for i, c in enumerate(self._cells):
+            if not c["valid"]:
+                continue
+            r = NSMakeRect(c["x"], c["y"], c["size"], c["size"])
+            path = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(r, 2.5, 2.5)
+            (theme.CHIP if c["level"] == 0
+             else theme.GREEN.colorWithAlphaComponent_(_HM_ALPHA[c["level"]])).set()
+            path.fill()
+            if i == self._hover:
+                _rgb(_CLAY, 1.0).set()
+                path.setLineWidth_(1.5)
+                path.stroke()
+        # legenda-vakjes
+        x = self._legend_sw_x
+        for lvl in range(5):
+            r = NSMakeRect(x, self._legend_y, self._legend_sw, self._legend_sw)
+            (theme.CHIP if lvl == 0
+             else theme.GREEN.colorWithAlphaComponent_(_HM_ALPHA[lvl])).set()
+            NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(r, 2.0, 2.0).fill()
+            x += self._legend_sw + self._legend_sgap
+        # tooltip-pil (grafiet), tekst-label ligt er als subview bovenop
+        if self._tip_rect is not None:
+            tx, ty, tw, th = self._tip_rect
+            theme.GRAPHITE.set()
+            NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+                NSMakeRect(tx, ty, tw, th), 6, 6).fill()
 
 
 class _Chip(NSView):
@@ -1532,22 +1729,21 @@ class MainWindow(NSObject):
             threading.Thread(target=self._check_server_bg, daemon=True).start()
         y += hero_h + 16
 
-        # --- stat-tegels: 4-op-een-rij als het breed genoeg is, anders terug naar 2x2 ---
+        # --- stat-tegels: 3-op-een-rij als het breed genoeg is, anders terug naar 2 (de
+        #     vierde tegel 'Reeks' is bewust weg -- die woont nu in de heatmap hieronder) ---
         if s and s["delta"] is not None:
             d = s["delta"]
             wk_sub = f"{'▲' if d >= 0 else '▼'} {abs(d) * 100:.0f}% t.o.v. vorige week"
         else:
             wk_sub = "t.o.v. vorige week"
         fastest = s["fastest"] if s else None
-        streak = s["streak"] if s else 0
         tiles = [
             ("Woorden deze week", _nl_int(s["words_week"]) if s else "0", wk_sub),
             ("Tijd bespaard", _dur_hm(s["saved_sec"]) if s else "≈ 0 m", "t.o.v. typen (40 wpm)"),
             ("Snelste dictaat", f"{_nl_dec(fastest, 1)} s" if fastest else "—", "transcriptietijd"),
-            ("Reeks", f"{streak} {'dag' if streak == 1 else 'dagen'}", "aaneengesloten dagen"),
         ]
         gap, tile_h = 12, 76
-        cols = 4 if inner_w >= STATS_4COL_W else 2
+        cols = 3 if inner_w >= STATS_4COL_W else 2
         col_w = (inner_w - (cols - 1) * gap) / cols
         for idx, (lbl, val, sub) in enumerate(tiles):
             r, c = divmod(idx, cols)
@@ -1555,6 +1751,31 @@ class MainWindow(NSObject):
                             col_w, lbl, val, sub)
         rows = (len(tiles) + cols - 1) // cols
         y += rows * tile_h + (rows - 1) * 10 + 16
+
+        # --- reeks-heatmap: vervangt het oude 'Reeks'-tegeltje. Het streak-getal staat nu
+        #     in de kaartkop, met de langste reeks als record ernaast; hover -> woorden/dag.
+        #     Alles uit stats.summary() (heatmap_days), geen extra schijf-lezing. ---
+        streak = s["streak"] if s else 0
+        longest = s.get("longest_streak", 0) if s else 0
+        hm_days = s["heatmap_days"] if s else {}
+        hm_w = inner_w - 24
+        hm_h = _heatmap_height(hm_w)
+        card_h = 34 + hm_h + 12
+        hm_card = _card(NSMakeRect(ui.PAD, y, inner_w, card_h))
+        hct = ui.label(f"Reeks — {streak} {'dag' if streak == 1 else 'dagen'} op rij", 13, "bold")
+        hct.setFrame_(NSMakeRect(14, 12, inner_w - 170, 18))
+        hm_card.addSubview_(hct)
+        if longest:
+            hcr = ui.label(f"langste · {longest} {'dag' if longest == 1 else 'dagen'}", 11,
+                           color=theme.FAINT)
+            hcr.setAlignment_(NSTextAlignmentRight)
+            hcr.setFrame_(NSMakeRect(inner_w - 14 - 150, 14, 150, 15))
+            hm_card.addSubview_(hcr)
+        hm = _Heatmap.alloc().initWithFrame_days_today_(
+            NSMakeRect(12, 34, hm_w, hm_h), hm_days, now.date())
+        hm_card.addSubview_(hm)
+        v.addSubview_(hm_card)
+        y += card_h + 16
 
         # --- week-staafgrafiek ---
         chart_card = _card(NSMakeRect(ui.PAD, y, inner_w, 160))
