@@ -18,7 +18,7 @@ loop of het plakken vertragen; summary() leest het bestand één keer bij openen
 import json
 import os
 import tempfile
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import settings
 
@@ -52,7 +52,13 @@ def _write(data):
 
 def _blank():
     return {"dictations": 0, "words": 0, "speech_sec": 0.0,
-            "fastest_took": None, "total_took": 0.0}
+            "fastest_took": None, "total_took": 0.0, "dayparts": [0, 0, 0, 0]}
+
+
+def _daypart(hour):
+    """0=nacht (0-6u), 1=ochtend (6-12u), 2=middag (12-18u), 3=avond (18-24u). Alleen
+    wannéér je dicteert -- inhoudsloos, net als de rest van stats.json."""
+    return 0 if hour < 6 else 1 if hour < 12 else 2 if hour < 18 else 3
 
 
 def record(words, speech_sec, took):
@@ -63,10 +69,12 @@ def record(words, speech_sec, took):
     data = _read()
     key = date.today().isoformat()
     day = data.get(key) or _blank()
+    day.setdefault("dayparts", [0, 0, 0, 0])   # oudere dagen misten dit veld
     day["dictations"] += 1
     day["words"] += int(words)
     day["speech_sec"] += float(speech_sec)
     day["total_took"] += float(took)
+    day["dayparts"][_daypart(datetime.now().hour)] += 1
     if day["fastest_took"] is None or took < day["fastest_took"]:
         day["fastest_took"] = float(took)
     data[key] = day
@@ -153,6 +161,19 @@ def summary():
             hm_days[dd.isoformat()] = wv
         dd += timedelta(days=1)
 
+    # "Jouw stem": spreektempo + gemiddelde lengte over alles wat we bewaren (stabieler dan
+    # één week), en de dagdeel-verdeling (wannéér je dicteert, nooit wát).
+    tot_words = sum(int(v.get("words", 0)) for v in data.values())
+    tot_speech = sum(float(v.get("speech_sec", 0.0)) for v in data.values())
+    wpm = (tot_words / tot_speech * 60.0) if tot_speech > 0 else None
+    avg_len = (tot_words / total_dictations) if total_dictations > 0 else None
+    dayparts = [0, 0, 0, 0]
+    for v in data.values():
+        dp = v.get("dayparts") or []
+        for i in range(min(4, len(dp))):
+            dayparts[i] += int(dp[i])
+    peak_daypart = max(range(4), key=lambda i: dayparts[i]) if any(dayparts) else None
+
     return {
         "words_today": words_today,
         "words_week": words_week,
@@ -165,4 +186,8 @@ def summary():
         "total_dictations": total_dictations,   # goedkope 'is er iets veranderd'-signatuur
         "heatmap_days": hm_days,      # {iso-datum: woorden} voor niet-lege dagen, 26 wk
         "longest_streak": _longest_streak(data),
+        "wpm": wpm,                   # gem. woorden/minuut, of None
+        "avg_len": avg_len,           # gem. woorden per dictaat, of None
+        "dayparts": dayparts,         # [nacht, ochtend, middag, avond]
+        "peak_daypart": peak_daypart, # index van het drukste dagdeel, of None
     }
