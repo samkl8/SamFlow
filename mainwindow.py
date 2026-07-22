@@ -1960,21 +1960,24 @@ class MainWindow(NSObject):
             threading.Thread(target=self._check_server_bg, daemon=True).start()
         y += hero_h + 16
 
-        # --- stat-tegels: 3-op-een-rij als het breed genoeg is, anders terug naar 2 (de
-        #     vierde tegel 'Reeks' is bewust weg -- die woont nu in de heatmap hieronder) ---
+        # --- stat-tegels: 4-op-een-rij als het breed genoeg is, anders 2x2 (even grid, geen
+        #     gat). Het oude 'Reeks'-tegeltje is vervangen door 'Totaal gedicteerd' -- de reeks
+        #     zelf woont nu in de heatmap hieronder. ---
         if s and s["delta"] is not None:
             d = s["delta"]
             wk_sub = f"{'▲' if d >= 0 else '▼'} {abs(d) * 100:.0f}% t.o.v. vorige week"
         else:
             wk_sub = "t.o.v. vorige week"
         fastest = s["fastest"] if s else None
+        total_words = s.get("total_words", 0) if s else 0
         tiles = [
             ("Woorden deze week", _nl_int(s["words_week"]) if s else "0", wk_sub),
             ("Tijd bespaard", _dur_hm(s["saved_sec"]) if s else "≈ 0 m", "t.o.v. typen (40 wpm)"),
             ("Snelste dictaat", f"{_nl_dec(fastest, 1)} s" if fastest else "—", "transcriptietijd"),
+            ("Totaal gedicteerd", _nl_int(total_words), "woorden sinds je begon"),
         ]
         gap, tile_h = 12, 76
-        cols = 3 if inner_w >= STATS_4COL_W else 2
+        cols = 4 if inner_w >= STATS_4COL_W else 2
         col_w = (inner_w - (cols - 1) * gap) / cols
         for idx, (lbl, val, sub) in enumerate(tiles):
             r, c = divmod(idx, cols)
