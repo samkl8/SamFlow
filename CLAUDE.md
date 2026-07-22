@@ -67,6 +67,23 @@ Dit is de onderhoudslus van het project. Hoor je een woord dat er verkeerd uitko
   Die lijst hoeft niet volledig — hij haalt de grootste ruis eruit; de rest negeer je in
   `--review`. `AUTO_PROMOTE` staat bewust uit: automatisch toevoegen pakt ook rommel.
 
+## Regels bij het aanpassen van snippets.py
+- **Snippets zijn de állerlaatste laag** in `handle()`: ná `cleanup.clean` én ná `polish.polish`,
+  vlak vóór `paste`. Bewust — zo verbouwt geen enkele laag (zeker niet het oppoets-model) een
+  ingevoegde URL of handtekening nog. Fail-silent aangeroepen: een fout in de expansie mag het
+  dictaat nooit ophangen (zelfde contract als `lexicon.record`).
+- **`apply()` mag nóóit iets buiten de lijst aanraken** — dezelfde belofte als
+  `lexicon.canonicalise`. Een trigger matcht alleen als **hele frase** (genormaliseerd:
+  kleinletters, flexibele witruimte), begrensd door woordgrenzen (`(?<!\w)…(?!\w)`), zodat
+  "de site" nooit in "sitemap" vuurt. Alle triggers gaan in **één regex-pas, langste eerst**:
+  zo wordt een net ingevoegde expansie nooit zelf opnieuw als trigger gelezen, en wint een
+  langere frase van een kortere die erin zit. Raak je de matcher aan, breid dan
+  `test_snippets.py` (scratchpad-stijl) uit — elk geval staat er omdat het een echte val was.
+- **Opslag in App Support, `0600`** (`snippets.json`), níét naast een git-checkout: een snippet
+  kan een handtekening of bankgegevens bevatten (zelfde reden als `history.jsonl`). **Per
+  dictaat herlezen via mtime-cache** (zoals lexicon) — een nieuwe snippet werkt meteen, zonder
+  herstart. Sloop de mtime-sleutel niet weg.
+
 ## Regels bij het aanpassen van samflow.py
 - **Nooit stilte naar Whisper sturen.** Het model verzint dan zinnen (echt gebeurd:
   2s stilte → `Www.Nil.Com.Br`). De energie-poort in `handle()` is de eerste verdediging,

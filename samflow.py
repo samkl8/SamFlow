@@ -57,6 +57,7 @@ import lexicon
 import media as media_module
 import polish
 import settings
+import snippets
 import stats
 import telemetry
 
@@ -296,6 +297,14 @@ def handle(audio: np.ndarray, do_paste: bool = True, app: str = None):
     # Uit (default) of bij fout: onveranderd terug. Draait op deze handle-thread, dus
     # blokkeert de run loop niet. Zie polish.py voor de vangrail.
     text = polish.polish(text)
+
+    # Snippets: trigger-frases -> expansies (URL/handtekening/…). Bewust de allerláátste
+    # laag -- ná cleanup én ná polish -- zodat geen enkele laag de expansie nog verbouwt.
+    # Fail-silent: een fout in de expansie mag het dictaat nooit ophangen.
+    try:
+        text = snippets.apply(text)
+    except Exception:
+        pass
 
     # onthoud wat we nog niet kenden; voer voor `samflow.py --review` (zie lexicon.py)
     lexicon.record(raw)

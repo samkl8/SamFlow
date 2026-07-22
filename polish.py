@@ -16,6 +16,7 @@ dictaat nooit ophangen of kapotmaken; erger dan de opgeschoonde tekst wordt het 
 níét vangen -- vandaar dat dit opt-in is en niet de default.)
 """
 import json
+import re
 import urllib.request
 
 import settings
@@ -71,6 +72,37 @@ _FEWSHOT = [
 ]
 
 
+def _norm(s: str) -> str:
+    """Kleinletters, leestekens weg, witruimte samengevouwen -- zodat een vergelijking
+    niet struikelt over een komma of hoofdletter."""
+    return re.sub(r"\s+", " ", re.sub(r"[^\w\s]", " ", s.lower())).strip()
+
+
+def _fewshot_fragments() -> tuple:
+    """Onderscheidende zinsdelen uit de few-shot. Het model hoort ze NOOIT in een output
+    te zetten tenzij ze in de input stonden; een zwak model echoot soms een voorbeeld."""
+    frags = []
+    for m in _FEWSHOT:
+        for part in re.split(r"[.\n:]", m["content"]):
+            f = _norm(part)
+            if len(f) >= 20:           # lang genoeg om onderscheidend te zijn
+                frags.append(f)
+    return tuple(frags)
+
+
+_LEAK_FRAGMENTS = _fewshot_fragments()
+
+
+def _leaks_fewshot(original: str, polished: str) -> bool:
+    """Staat er een few-shot-voorbeeldzin in de output die niet in het dictaat stond?
+    Dan echode het model een voorbeeld (de beruchte 'vakantieplanning, want ik ben
+    volgende week weg' die nergens anders in de pijplijn bestaat) -> lek, niet vertrouwen.
+    Genormaliseerd vergeleken, zodat een échte dictatie van diezelfde zin blijft staan
+    (die zit dan óók in de input)."""
+    o, p = _norm(original), _norm(polished)
+    return any(frag in p and frag not in o for frag in _LEAK_FRAGMENTS)
+
+
 def _sane(original: str, polished: str) -> bool:
     """Conservatieve vangrail: accepteer de polish alleen als 'ie plausibel een
     opgeschoonde versie is -- geen leeg, ge-explodeerd of ingeklapt antwoord. Polijsten
@@ -113,6 +145,9 @@ def polish(text: str) -> str:
         return text
     if not _sane(text, polished):
         print("  ! oppoets-resultaat te afwijkend; opgeschoonde tekst gebruikt")
+        return text
+    if _leaks_fewshot(text, polished):
+        print("  ! oppoets lekte een voorbeeldzin; opgeschoonde tekst gebruikt")
         return text
     return polished
 
