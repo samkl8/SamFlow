@@ -34,6 +34,7 @@ from AppKit import (
     NSBackingStoreBuffered, NSBezierPath, NSButton, NSColor, NSFont,
     NSFontWeightRegular, NSGradient, NSGraphicsContext, NSImage,
     NSImageScaleProportionallyUpOrDown, NSImageSymbolConfiguration, NSImageView,
+    NSLineBreakByTruncatingTail,
     NSMakePoint, NSMakeRect, NSNoBorder, NSPasteboard, NSPasteboardTypeString,
     NSScrollView, NSSearchField, NSTextAlignmentCenter, NSTextAlignmentRight,
     NSTextField, NSTextFieldRoundedBezel, NSTextView, NSTimer, NSTrackingActiveInKeyWindow,
@@ -53,6 +54,7 @@ import history
 import lexicon
 import prefs
 import settings
+import snippets
 import stats
 import theme
 import ui
@@ -1192,6 +1194,7 @@ class MainWindow(NSObject):
         self._sugg = []
         self._term_list = []
         self._map_list = []
+        self._snip_list = []
         y = 24
         title = ui.label("Woordenlijst", 19, "bold")
         title.setFrame_(NSMakeRect(ui.PAD, y, inner_w, 24))
@@ -1336,6 +1339,57 @@ class MainWindow(NSObject):
         addc.setFrame_(NSMakeRect(ui.PAD + 2, y + 8, 170, 20))
         v.addSubview_(addc)
         y += 30
+        y += ui.SEC_GAP
+
+        # 4) Snippets: zeg een trigger, plak een blok. Zelfde in-app-lijn als de rest;
+        #    minimale rijen (trigger-pil -> expansie). Opslag lokaal in App Support, per
+        #    dictaat herlezen (snippets.py) -- een nieuwe snippet werkt meteen.
+        y = ui.glabel(v, ui.PAD, y, inner_w, "Snippets", "zeg een trigger, plak een blok")
+        snip_items = snippets.items()
+        if not snip_items:
+            y = ui.card_group(v, ui.PAD, y, inner_w, [40], lambda c, i, top, w, _h:
+                              self._empty_row(c, top, w,
+                                              "Nog geen snippets — bijv. “mijn linkedin” → je URL."))
+        else:
+            def fill_snip(c, idx, top, w, _h):
+                trig, exp = snip_items[idx]
+                self._snip_list.append(trig)
+                meas = ui.label(trig, 12, "medium")
+                meas.sizeToFit()
+                tw = min(meas.frame().size.width, 190)
+                chip_w = tw + 22
+                chip = _Chip.alloc().initWithFrame_style_(
+                    NSMakeRect(14, top + 8, chip_w, 24), "solid")
+                cl = ui.label(trig, 12, "medium", color=theme.TEXT)
+                cl.setFrame_(NSMakeRect(11, 4, tw, 16))
+                chip.addSubview_(cl)
+                c.addSubview_(chip)
+                arr = ui.label("→", 12, color=theme.FAINT)
+                ax = 14 + chip_w + 8
+                arr.setFrame_(NSMakeRect(ax, top + 12, 16, 16))
+                c.addSubview_(arr)
+                wis = NSButton.buttonWithTitle_target_action_("wis", self, "snipRemove:")
+                wis.setBordered_(False)
+                wis.setFont_(NSFont.systemFontOfSize_(11.5))
+                wis.setContentTintColor_(_rgb(_CLAY))
+                wis.setTag_(idx)
+                wis.setFrame_(NSMakeRect(w - 12 - 40, top + 10, 40, 20))
+                c.addSubview_(wis)
+                ex = ax + 22
+                expl = ui.label(" ".join(exp.split()), 12.5, color=theme.TEXT2)
+                expl.setUsesSingleLineMode_(True)
+                expl.cell().setLineBreakMode_(NSLineBreakByTruncatingTail)
+                expl.setFrame_(NSMakeRect(ex, top + 12, max(60.0, w - ex - 58), 17))
+                c.addSubview_(expl)
+
+            y = ui.card_group(v, ui.PAD, y, inner_w, [40] * len(snip_items), fill_snip)
+        adds = NSButton.buttonWithTitle_target_action_("+ Nieuwe snippet", self, "snipNew:")
+        adds.setBordered_(False)
+        adds.setFont_(NSFont.systemFontOfSize_(12))
+        adds.setContentTintColor_(_rgb(_CLAY))
+        adds.setFrame_(NSMakeRect(ui.PAD + 2, y + 8, 170, 20))
+        v.addSubview_(adds)
+        y += 30
         y += ui.PAD
         return v, y
 
@@ -1415,6 +1469,17 @@ class MainWindow(NSObject):
             lexicon.remove_mapping(self._map_list[i])
             self.show_tab(2)
 
+    def snipNew_(self, _sender):
+        # "+ Nieuwe snippet": open het gebrande paneel met een trigger-veld + een
+        # meerregelige expansie (handtekeningen mogen meerdere regels beslaan).
+        self._present_sheet("snippet")
+
+    def snipRemove_(self, sender):
+        i = sender.tag()
+        if 0 <= i < len(self._snip_list):
+            snippets.remove(self._snip_list[i])
+            self.show_tab(2)
+
     # ---------- gebrand invoer-paneel (vervangt de kale NSAlert) ----------
     @objc.python_method
     def _rounded_field(self, placeholder, w):
@@ -1446,6 +1511,9 @@ class MainWindow(NSObject):
         elif mode == "correct":
             title = f"“{word}” toevoegen of corrigeren"
             sub = "Laat staan om zo toe te voegen, of pas aan naar de juiste schrijfwijze."
+        elif mode == "snippet":
+            title = "Nieuwe snippet"
+            sub = "Zeg de trigger tijdens een dictaat; SamFlow plakt de expansie ervoor in de plaats."
         else:
             title = "Nieuwe correctie"
             sub = "Als SamFlow een woord fonetisch net verkeerd hoort."
@@ -1504,6 +1572,42 @@ class MainWindow(NSObject):
             self._sheet_canon = canon
             heard.setNextKeyView_(canon)
             y += 40
+        elif mode == "snippet":
+            trig = self._rounded_field("Trigger — wat je zegt (bijv. mijn linkedin)", iw)
+            trig.setFrameOrigin_(NSMakePoint(P, y))
+            v.addSubview_(trig)
+            self._sheet_heard = trig
+            y += 34
+            hint = ui.label("Kies iets dat je normaal niet per ongeluk zegt.", 11, color=theme.FAINT)
+            hint.setFrame_(NSMakeRect(P + 2, y, iw, 15))
+            v.addSubview_(hint)
+            y += 22
+            lab = ui.label("Wordt geplakt:", 11.5, color=theme.TEXT2)
+            lab.setFrame_(NSMakeRect(P, y, iw, 15))
+            v.addSubview_(lab)
+            y += 20
+            fh = 96
+            v.addSubview_(_card(NSMakeRect(P, y, iw, fh)))
+            sc = NSScrollView.alloc().initWithFrame_(NSMakeRect(P + 2, y + 2, iw - 4, fh - 4))
+            sc.setDrawsBackground_(False)
+            sc.setBorderType_(NSNoBorder)
+            sc.setHasVerticalScroller_(True)
+            tv = NSTextView.alloc().initWithFrame_(NSMakeRect(0, 0, iw - 4, fh - 4))
+            tv.setDrawsBackground_(False)
+            tv.setRichText_(False)
+            tv.setFont_(NSFont.systemFontOfSize_(13))
+            tv.setTextColor_(theme.TEXT)
+            tv.setInsertionPointColor_(theme.CLAY)
+            tv.setTextContainerInset_((8, 8))
+            tv.setAutomaticQuoteSubstitutionEnabled_(False)
+            tv.setAutomaticDashSubstitutionEnabled_(False)
+            tv.setAutomaticTextReplacementEnabled_(False)
+            tv.setAutomaticSpellingCorrectionEnabled_(False)
+            sc.setDocumentView_(tv)
+            v.addSubview_(sc)
+            self._sheet_text = tv
+            trig.setNextKeyView_(tv)
+            y += fh + 8
         else:                                    # correct: één veld, voorgevuld
             field = self._rounded_field("", iw)
             field.setStringValue_(word)
@@ -1568,6 +1672,12 @@ class MainWindow(NSObject):
             self._end_sheet()
             if heard and len(canon) >= 2:        # add_mapping weigert een te kort doel zelf ook
                 lexicon.add_mapping(heard, canon)
+                self.show_tab(2)
+        elif mode == "snippet":
+            trig = self._sheet_heard.stringValue().strip() if self._sheet_heard else ""
+            exp = self._sheet_text.string().strip() if self._sheet_text is not None else ""
+            self._end_sheet()
+            if trig and exp and snippets.add(trig, exp):
                 self.show_tab(2)
         else:                                    # correct: laat je 't staan -> accept,
             target = self._sheet_heard.stringValue().strip() if self._sheet_heard else ""
