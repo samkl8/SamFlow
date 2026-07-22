@@ -186,6 +186,7 @@ def summary():
         "total_dictations": total_dictations,   # goedkope 'is er iets veranderd'-signatuur
         "heatmap_days": hm_days,      # {iso-datum: woorden} voor niet-lege dagen, 26 wk
         "longest_streak": _longest_streak(data),
+        "total_words": tot_words,     # alle gedicteerde woorden (bewaarde periode)
         "wpm": wpm,                   # gem. woorden/minuut, of None
         "avg_len": avg_len,           # gem. woorden per dictaat, of None
         "dayparts": dayparts,         # [nacht, ochtend, middag, avond]
