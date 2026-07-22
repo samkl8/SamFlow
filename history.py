@@ -20,6 +20,7 @@ het bestand blijft klein (30 dagen dicteren is megabytes, geen gigabytes).
 """
 import json
 import os
+import re
 import time
 
 import settings
@@ -96,6 +97,29 @@ def prune():
 def entries():
     """Alle dictaten, nieuwste eerst."""
     return sorted(_read_all(), key=lambda e: e.get("ts", 0), reverse=True)
+
+
+def top_words(days=30, n=5):
+    """[(woord, aantal), ...] -- de vaakst gezegde woorden over de laatste `days` dagen,
+    voor de 'Jouw stem'-kaart. Alléén als historie aanstaat (anders is er geen tekst): dan
+    geeft dit [] terug en toont de kaart een uitnodiging i.p.v. de lijst. Stopwoorden en
+    heel korte woorden vallen weg (dezelfde ruisfilter als de leer-loop)."""
+    if not settings.get("history_enabled"):
+        return []
+    import lexicon                      # lui: vermijdt een import-cyclus bij het laden
+    cutoff = time.time() - days * 86400 if days else 0
+    counts, surface = {}, {}
+    for e in _read_all():
+        if e.get("ts", 0) < cutoff:
+            continue
+        for tok in re.findall(r"[^\W\d_]+", e.get("text", ""), re.UNICODE):
+            key = tok.lower()
+            if len(key) < 3 or key in lexicon.STOPWORDS:
+                continue
+            counts[key] = counts.get(key, 0) + 1
+            surface.setdefault(key, tok)     # eerste schrijfwijze voor de weergave
+    top = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:n]
+    return [(surface[k], c) for k, c in top]
 
 
 def search(q):

@@ -75,6 +75,7 @@ _WEEKDAYS_NL = ["maandag", "dinsdag", "woensdag", "donderdag", "vrijdag",
                 "zaterdag", "zondag"]
 _MON_ABBR = ["jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep",
              "okt", "nov", "dec"]
+_DAYPART_PEAK = ["'s nachts", "'s ochtends", "'s middags", "'s avonds"]
 
 NAV = [
     ("Overzicht", "waveform"),
@@ -164,6 +165,18 @@ def _dur_hm(sec):
     if m < 60:
         return f"≈ {m} m"
     return f"≈ {m // 60} u {m % 60:02d} m"
+
+
+def _voice_style(wpm, avg_len):
+    """Eén eerlijke, afgeleide typering voor de stijl-chip -- geen zin óver jou, maar een
+    label uit twee gemeten getallen (gemiddelde lengte + tempo). None als er nog niets is."""
+    if not avg_len:
+        return None
+    length = "bondig" if avg_len < 20 else "helder" if avg_len < 45 else "uitgebreid"
+    if not wpm:
+        return length
+    tempo = "vlot" if wpm >= 160 else "rustig" if wpm >= 110 else "bedachtzaam"
+    return f"{length} & {tempo}"
 
 
 class _NavItem(NSView):
@@ -1739,6 +1752,114 @@ class MainWindow(NSObject):
         card.addSubview_(s)
         v.addSubview_(card)
 
+    # ---------- Jouw stem (reflectieve samenvatting, net boven Recent) ----------
+    @objc.python_method
+    def _voice_num(self, card, x, w, numtext, unit, sub):
+        num = ui.label(numtext, 22, "bold")
+        num.sizeToFit()
+        nw = min(num.frame().size.width, w - 34)
+        num.setFrame_(NSMakeRect(x, 40, nw, 27))
+        card.addSubview_(num)
+        u = ui.label(unit, 12, color=theme.FAINT)
+        u.setFrame_(NSMakeRect(x + nw + 4, 49, 54, 16))
+        card.addSubview_(u)
+        sl = ui.label(sub, 11, color=theme.FAINT)
+        sl.setFrame_(NSMakeRect(x, 66, w - 8, 14))
+        card.addSubview_(sl)
+
+    @objc.python_method
+    def _voice_card(self, v, y, inner_w, s):
+        wpm = s.get("wpm") if s else None
+        avg_len = s.get("avg_len") if s else None
+        dayparts = s.get("dayparts") if s else None
+        peak = s.get("peak_daypart") if s else None
+        try:
+            top = history.top_words(30, 5) if settings.get("history_enabled") else []
+        except Exception:
+            top = []
+        has_words = len(top) > 0
+        n = len(top)
+
+        words_top = 118
+        words_bottom = words_top + (n * 22 if has_words else 20)
+        style = _voice_style(wpm, avg_len)
+        chip_y = words_bottom + 8
+        card_h = chip_y + (26 if style else 0) + 12
+
+        card = _card(NSMakeRect(ui.PAD, y, inner_w, card_h))
+        title = ui.label("Jouw stem", 13, "bold")
+        title.setFrame_(NSMakeRect(14, 12, inner_w - 180, 18))
+        card.addSubview_(title)
+        note = ui.label("alleen op deze Mac", 11, color=theme.FAINT)
+        note.setAlignment_(NSTextAlignmentRight)
+        note.setFrame_(NSMakeRect(inner_w - 14 - 170, 14, 170, 15))
+        card.addSubview_(note)
+
+        # feiten-rij: spreektempo | gem. lengte | piekmoment (dagdeel-staafjes)
+        col_w = (inner_w - 28) / 3.0
+        x0, x1, x2 = 14.0, 14.0 + col_w, 14.0 + 2 * col_w
+        card.addSubview_(ui.fill(NSMakeRect(x1 - 1, 44, 0.5, 30), theme.LINE))
+        card.addSubview_(ui.fill(NSMakeRect(x2 - 1, 44, 0.5, 30), theme.LINE))
+        self._voice_num(card, x0, col_w, _nl_int(round(wpm)) if wpm else "—", "w/min", "spreektempo")
+        self._voice_num(card, x1 + 14, col_w, _nl_int(round(avg_len)) if avg_len else "—", "wrd", "gem. per dictaat")
+        px = x2 + 14
+        if dayparts and any(dayparts):
+            mx = max(dayparts) or 1
+            bw, gap, base_y, max_h = 9.0, 5.0, 62.0, 18.0
+            for i in range(4):
+                h = 3 + (dayparts[i] / mx) * max_h
+                col = _rgb(_CLAY, 1.0) if i == peak else _rgb(_CLAY, 0.38)
+                card.addSubview_(ui.fill(NSMakeRect(px + i * (bw + gap), base_y - h, bw, h), col, 2))
+            peaktxt = f"piek — {_DAYPART_PEAK[peak]}" if peak is not None else "piekmoment"
+        else:
+            peaktxt = "nog geen ritme"
+        pl = ui.label(peaktxt, 11, color=theme.FAINT)
+        pl.setFrame_(NSMakeRect(x2 + 14, 66, col_w, 14))
+        card.addSubview_(pl)
+
+        card.addSubview_(ui.hline(14, 92, inner_w - 28))
+        ui.glabel(card, 14, 100, inner_w - 28, "Meest gezegd", "30 dagen")
+
+        if has_words:
+            maxc = max(c for _, c in top) or 1
+            for i, (word, cnt) in enumerate(top):
+                ry = words_top + i * 22
+                wlab = ui.label(word, 12.5)
+                wlab.setUsesSingleLineMode_(True)
+                wlab.cell().setLineBreakMode_(NSLineBreakByTruncatingTail)
+                wlab.setFrame_(NSMakeRect(16, ry, 108, 16))
+                card.addSubview_(wlab)
+                tx, tw = 132.0, inner_w - 132 - 62
+                card.addSubview_(ui.fill(NSMakeRect(tx, ry + 5, tw, 5), theme.CHIP, 2))
+                card.addSubview_(ui.fill(NSMakeRect(tx, ry + 5, max(4.0, tw * cnt / maxc), 5), _rgb(_CLAY, 0.55), 2))
+                cl = ui.label(_nl_int(cnt), 11, color=theme.FAINT)
+                cl.setAlignment_(NSTextAlignmentRight)
+                cl.setFrame_(NSMakeRect(inner_w - 14 - 46, ry, 46, 15))
+                card.addSubview_(cl)
+        else:
+            inv = ui.label("Zet historie aan om je meest gebruikte woorden te zien.",
+                           12, color=theme.TEXT2)
+            inv.setFrame_(NSMakeRect(16, words_top, inner_w - 32, 16))
+            card.addSubview_(inv)
+
+        if style:
+            klbl = ui.label("STIJL", 9.5, "bold", color=theme.FAINT)
+            klbl.sizeToFit()
+            kw = klbl.frame().size.width
+            dlbl = ui.label(style, 11.5, "medium")
+            dlbl.sizeToFit()
+            dw = dlbl.frame().size.width
+            chip = _Chip.alloc().initWithFrame_style_(
+                NSMakeRect(14, chip_y, 12 + kw + 8 + dw + 12, 24), "solid")
+            klbl.setFrame_(NSMakeRect(12, 7, kw, 12))
+            chip.addSubview_(klbl)
+            dlbl.setFrame_(NSMakeRect(12 + kw + 8, 4, dw, 16))
+            chip.addSubview_(dlbl)
+            card.addSubview_(chip)
+
+        v.addSubview_(card)
+        return y + card_h + 20
+
     @objc.python_method
     def _overzicht_view(self):
         # stats uit de mtime-cache: een venster-resize herbouwt het hele dashboard,
@@ -1903,6 +2024,9 @@ class MainWindow(NSObject):
         chart_card.addSubview_(chart)
         v.addSubview_(chart_card)
         y += 160 + 20
+
+        # --- Jouw stem: reflectieve samenvatting (feitelijk, lokaal), net boven Recent ---
+        y = self._voice_card(v, y, inner_w, s)
 
         # --- Recent (alleen als historie aanstaat; anders leeg, zoals vroeger) ---
         if settings.get("history_enabled"):
