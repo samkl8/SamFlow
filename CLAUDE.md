@@ -115,6 +115,11 @@ Dit is de onderhoudslus van het project. Hoor je een woord dat er verkeerd uitko
   transcriptie alsnog afbreken.
 - Blokkeer de CFRunLoop nooit. De Fn-callback moet meteen terugkeren; transcriberen gebeurt
   in een aparte thread. Doe je dat niet, dan mist de tap toetsaanslagen.
+- **stdout/stderr staan op regel-buffering** (bovenaan het bestand). De app-bundle start ons
+  via een shell die de uitvoer naar `~/Library/Logs/samflow.log` stuurt, en dan buffert Python
+  per kilobyte: precies de regels vóór een vastloper waren wég zodra je de app afknalde. Elke
+  vastloper wiste zo zijn eigen bewijs. Zet dit niet in de launcher — die zit in een ad-hoc
+  gesigneerde bundle, en elke wijziging daar kost je de mic- en toetsenbordpermissies.
 - **Houd `Recorder.lock` nooit vast over een CoreAudio-call heen.** `stream.stop()/close()`
   (en `.start()`) kunnen bij een apparaatwissel op de HAL-mutex blokkeren (AUHAL `err=-10851`).
   Deed `_close()` dat vroeger mét de lock, dan blokkeerde de Fn-callback (main thread) op diezelfde
