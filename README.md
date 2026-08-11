@@ -182,6 +182,7 @@ Fn down ─► mic ─► Fn up ─► whisper-server ─► cleanup.py ─► p
 | `focus.py` | where is the user typing? caret → mouse-in-window → window |
 | `media.py` | pause Spotify/video while you hold Fn, resume after |
 | `audiodev.py` | pick the mic; avoid Bluetooth (keeps AirPods on full audio quality) |
+| `stall.py` | heartbeat: if the main thread ever freezes, log where it is stuck |
 | `macos/`, `install.sh` | the app bundle + launchd templates and the installer |
 
 ### Why whisper.cpp and not faster-whisper

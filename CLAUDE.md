@@ -132,6 +132,17 @@ Dit is de onderhoudslus van het project. Hoor je een woord dat er verkeerd uitko
 - Concludeer nooit uit "de stream opende" dat de mic werkt. Een geweigerde microfoon levert
   op macOS nullen op, geen fout. Vraag AVFoundation.
 
+## Regels bij het aanpassen van stall.py
+- De hartslag bestaat omdat een vastgelopen main thread niet zélf kan melden dat 'ie
+  vastzit. Een NSTimer tikt op de run loop, een achtergrondthread kijkt of die tik nog
+  komt, en dumpt anders de Python-stack van de main thread — dát is de call die hangt.
+- **De timer hoort in `NSRunLoopCommonModes`, niet in de default-mode.** Een default-mode-
+  timer staat stil zodra de run loop in event-tracking zit (menu open, venster slepen). Dat
+  is normaal gedrag en zou een valse stack-dump opleveren; één vals alarm en je gelooft de
+  volgende niet meer.
+- De ObjC-klassenaam moet uniek zijn in het hele proces (`_StallTicker`, want `hud.py` heeft
+  al een `_Ticker`). Twee ObjC-klassen met dezelfde naam laat PyObjC bij import knallen.
+
 ## Regels bij het aanpassen van hud.py
 - **De pill mag nooit focus pakken.** Het is een `NSPanel` met
   `NSWindowStyleMaskNonactivatingPanel`, getoond met `orderFrontRegardless()`. Gebruik nooit
