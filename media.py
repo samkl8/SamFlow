@@ -157,9 +157,18 @@ def web_sounding() -> list:
 # `tell application "Music" to player state` START Music.app als die niet draait.
 # De `is running`-test doet dat niet. En `as text` dwingt "playing" af in plaats van
 # de rauwe AppleEvent-code ('kPSP'), waar we niet op willen bouwen.
+#
+# `with timeout of 2 seconds` is geen franje: dit draait op de main thread bij Fn-omlaag,
+# en zónder die clausule wacht een Apple Event minuten op antwoord (de AppleScript-default,
+# niet iets wat je per ongeluk kort maakt). Reageert Spotify even niet -- bezig met opstarten,
+# updaten, of zelf vastgelopen -- dan hing de héle app daaraan vast: geen Fn, geen pill,
+# geen venster. Twee seconden is al royaal; normaal antwoordt Spotify in ~27 ms.
+# Een timeout gooit een fout, en die vangt _really_playing af als "ik weet het niet".
 _PLAYER_STATE = '''
 if application "{app}" is running then
-    tell application "{app}" to return player state as text
+    with timeout of 2 seconds
+        tell application "{app}" to return player state as text
+    end timeout
 else
     return "stopped"
 end if

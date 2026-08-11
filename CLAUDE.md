@@ -205,6 +205,11 @@ Dit is de onderhoudslus van het project. Hoor je een woord dat er verkeerd uitko
   nog ~2,6 seconden open. Apps in `SCRIPTABLE` vragen we hun eigen `player state`.
 - **AppleScript naar een app die niet draait, start die app.** Altijd de `is running`-guard
   eromheen. Getest: zonder guard lanceert een Fn-druk Music.app.
+- **Elke `tell` naar een andere app krijgt `with timeout of 2 seconds`.** Zonder die clausule
+  wacht een Apple Event minuten op antwoord — en dit draait op de main thread bij Fn-omlaag,
+  dus een Spotify die even niet reageert (opstarten, updaten, zelf vastgelopen) bevriest de
+  héle app. Normaal antwoordt 'ie in ~27 ms, dus 2 seconden is al royaal. Een timeout komt
+  terug als fout, en die valt in `_really_playing` netjes terug op "ik weet het niet".
 - `NSAppleScript` in-process kost 27 ms, `osascript` als subproces 132 ms. Dit draait op de
   main thread bij Fn-omlaag, dus dat verschil is het verschil tussen wel en niet merkbaar.
 - MediaRemote *uitlezen* (`MRMediaRemoteGetNowPlayingApplicationIsPlaying`) is sinds macOS
