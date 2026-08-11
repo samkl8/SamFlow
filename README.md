@@ -151,10 +151,13 @@ effect on your next dictation, no restart.
 
 - **Cost:** ~0.6s extra per dictation once warm, and ~2 GB RAM while the model is loaded.
   Ollama's `keep_alive` frees that RAM a few minutes after you stop — so if your Mac is tight
-  on memory, just leave the toggle off.
-- **Safety net:** if Ollama isn't running, the model isn't pulled, it times out, or the result
-  drifts too far from the input, SamFlow silently falls back to the rules-based text. The polish
-  can never hang or corrupt a dictation — worst case is the same text you'd get with it off.
+  on memory, just leave the toggle off. Long dictations cost proportionally more: the model
+  has to write out everything you said, so a five-minute dictation can spend tens of seconds
+  polishing before the paste lands.
+- **Safety net:** if Ollama isn't running, the model isn't pulled, it times out, the answer got
+  cut off by the token limit, or the result drifts too far from the input, SamFlow silently
+  falls back to the rules-based text. The polish can never hang or corrupt a dictation — worst
+  case is the same text you'd get with it off.
 - **Trade-off:** a 3B model is fast but not perfectly faithful on hard cases (mid-sentence
   self-corrections), which is why it is opt-in. A larger model (`qwen2.5:7b`) is more faithful
   at ~2s and ~5 GB RAM. Change it via `polish_model` in `settings.json`.
