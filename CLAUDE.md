@@ -84,6 +84,20 @@ Dit is de onderhoudslus van het project. Hoor je een woord dat er verkeerd uitko
   dictaat herlezen via mtime-cache** (zoals lexicon) — een nieuwe snippet werkt meteen, zonder
   herstart. Sloop de mtime-sleutel niet weg.
 
+## Regels bij het aanpassen van polish.py
+- **Een afgekapt antwoord is gevaarlijker dan een raar antwoord.** Raakt het model
+  `num_predict` op (Ollama meldt dat als `done_reason == "length"`), dan stopt de tekst
+  middenin een zin — en `_sane` mérkt dat niet, want die kijkt alleen naar lengteverhouding.
+  Gemeten: een dictaat van 371 woorden kwam er op 89% van het origineel uit, netjes binnen
+  de vangrail, met de laatste alinea eraf. Sloop de `done_reason`-check niet weg, en verlaag
+  `num_predict` nooit tot een vaste waarde.
+- **Ruimte en timeout horen bij de lengte van de tekst, niet bij een constante**
+  (`_budget`). `_sane` accepteert tot ~1,6x de invoer, dus daar is `num_predict` op gedimen-
+  sioneerd. De timeout heeft wél een plafond (`_TIMEOUT_MAX`): een dictaat dat pas na een
+  minuut geplakt wordt is erger dan een dictaat zonder oppoetsen.
+- Test een wijziging hier nooit met herhaalde audio. Een model dat drie identieke alinea's
+  terecht samenvat, valt op `_sane` terug en dat lijkt dan een bug in je wijziging.
+
 ## Regels bij het aanpassen van samflow.py
 - **Nooit stilte naar Whisper sturen.** Het model verzint dan zinnen (echt gebeurd:
   2s stilte → `Www.Nil.Com.Br`). De energie-poort in `handle()` is de eerste verdediging,

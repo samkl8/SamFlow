@@ -9,11 +9,17 @@ extra en houdt het model warm in RAM (Ollama `keep_alive`); uit kost het niets -
 call, geen model, geen RAM. Zo zet je 't uit als je Mac al vol zit.
 
 Vangrail (de belofte): bij ELKE twijfel valt polish terug op de binnenkomende tekst.
-Ollama niet bereikbaar, model niet gepulld, timeout, leeg antwoord, of een antwoord dat
-qua lengte te ver van het origineel afwijkt -> gewoon de Route-A-tekst. Het model mag je
-dictaat nooit ophangen of kapotmaken; erger dan de opgeschoonde tekst wordt het nooit.
-(De lengte-vangrail vangt uitdijen/inklappen; een subtiele betekeniswijziging kan 'ie
-níét vangen -- vandaar dat dit opt-in is en niet de default.)
+Ollama niet bereikbaar, model niet gepulld, timeout, leeg antwoord, een antwoord dat door
+de tokengrens is afgekapt, of een antwoord dat qua lengte te ver van het origineel afwijkt
+-> gewoon de Route-A-tekst. Het model mag je dictaat nooit ophangen of kapotmaken; erger
+dan de opgeschoonde tekst wordt het nooit. (De lengte-vangrail vangt uitdijen/inklappen;
+een subtiele betekeniswijziging kan 'ie níét vangen -- vandaar dat dit opt-in is en niet
+de default.)
+
+De ~0,6s geldt voor een kort dictaat. Ruimte (num_predict) en timeout schalen mee met de
+lengte van de tekst (zie `_budget`), want die stonden vast en lieten juist lange dictaten
+stranden. Een dictaat van vijf minuten kost daardoor tientallen seconden oppoetsen vóór
+het plakken -- de prijs van polish áán bij lange dictaten.
 """
 import json
 import re
@@ -24,7 +30,11 @@ import settings
 _URL = "http://127.0.0.1:11434/api/chat"
 _TAGS_URL = "http://127.0.0.1:11434/api/tags"
 _KEEP_ALIVE = "5m"     # model warm ná gebruik, dan geeft Ollama de RAM weer vrij
-_TIMEOUT = 8.0         # seconden; erna: vangrail (ruwe tekst)
+_TIMEOUT = 8.0         # bodem in seconden; erna: vangrail (ruwe tekst)
+_TIMEOUT_MAX = 60.0    # plafond: liever een onopgepoetst dictaat dan een minutenlange plak-wachttijd
+_CHARS_PER_SEC = 60.0  # ~een 3B-model op Metal; bepaalt hoeveel timeout een lang dictaat krijgt
+_CHARS_PER_TOKEN = 3.0  # ruwe schatting voor Nederlands; alleen om num_predict te dimensioneren
+_MIN_PREDICT = 512     # genoeg voor een kort dictaat; de oude vaste waarde
 
 # De "polijst, herschrijf niet"-prompt. Uit de prototype-tests gekomen: zonder de
 # expliciete regels (behoud tijden/data, zelfcorrectie-afhandeling) verdraaide de 3B soms
@@ -117,6 +127,19 @@ def _sane(original: str, polished: str) -> bool:
     return True
 
 
+def _budget(text: str) -> tuple:
+    """(num_predict, timeout) voor dit dictaat. Beide schaalden vroeger niet mee: 512
+    tokens en 8 seconden waren ruim bij een cap van 2 minuten, maar een lang dictaat liep
+    er stil op stuk -- het antwoord werd halverwege afgekapt, `_sane` keurde die
+    inklapping (terecht) af, en je kreeg de onopgepoetste tekst zonder te weten waarom.
+    De ruimte volgt nu de lengte van de input: `_sane` accepteert tot ~1,6x de invoer,
+    dus daar dimensioneren we num_predict op. De timeout heeft wél een plafond -- een
+    dictaat dat pas na een minuut geplakt wordt is erger dan een dictaat zonder polish."""
+    predict = max(_MIN_PREDICT, int(len(text) * 1.6 / _CHARS_PER_TOKEN) + 128)
+    timeout = min(_TIMEOUT_MAX, max(_TIMEOUT, len(text) / _CHARS_PER_SEC))
+    return predict, timeout
+
+
 def polish(text: str) -> str:
     """Poets `text` op met het lokale model. Uit (default) of bij welke fout dan ook:
     geef `text` onveranderd terug. Nooit een exceptie naar de aanroeper."""
@@ -125,23 +148,33 @@ def polish(text: str) -> str:
     if not text or not text.strip():
         return text
     model = settings.get("polish_model")
+    predict, timeout = _budget(text)
     body = {
         "model": model,
         "messages": [{"role": "system", "content": _SYSTEM}] + _FEWSHOT +
                     [{"role": "user", "content": text}],
         "stream": False,
         "keep_alive": _KEEP_ALIVE,
-        "options": {"temperature": 0.0, "num_predict": 512},
+        "options": {"temperature": 0.0, "num_predict": predict},
     }
     try:
         data = json.dumps(body).encode("utf-8")
         req = urllib.request.Request(
             _URL, data=data, headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=_TIMEOUT) as r:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
             out = json.loads(r.read())
         polished = (out.get("message") or {}).get("content", "").strip()
     except Exception as e:
         print(f"  ! oppoetsen overgeslagen ({e}); opgeschoonde tekst gebruikt")
+        return text
+    # Het model raakte num_predict op i.p.v. z'n eigen stop-token: het antwoord houdt
+    # midden in een zin op. Dit is de gevaarlijkste uitkomst van allemaal, want een
+    # afgekapt antwoord is niet raar genoeg voor _sane -- die kijkt alleen naar lengte,
+    # en 89% van het origineel glipt er moeiteloos doorheen. Zo verdween vroeger stilletjes
+    # de laatste alinea van een lang dictaat (gemeten, niet bedacht). Vangrail: weggooien.
+    if out.get("done_reason") == "length":
+        print("  ! oppoets liep tegen de tokengrens (antwoord afgekapt); "
+              "opgeschoonde tekst gebruikt")
         return text
     if not _sane(text, polished):
         print("  ! oppoets-resultaat te afwijkend; opgeschoonde tekst gebruikt")
