@@ -83,6 +83,9 @@ BLOCK = 1024               # 64 ms per block at 16 kHz
 PREROLL_SEC = 0.4          # audio kept from *before* you pressed Fn
 IDLE_CLOSE_SEC = 45        # close the mic after this long without a dictation
 MIN_SPEECH_SEC = 0.35      # shorter than this is a stray Fn tap, not speech
+OPEN_WAIT_SEC = 0.25       # zo lang mag de Fn-callback op een koude mic wachten. Openen
+                           # kost gezond 70-110 ms; hierboven is CoreAudio in de knoop en
+                           # laten we de main thread los i.p.v. de app te laten bevriezen
 MAX_SPEECH_SEC = 300       # terugval-plafond; de echte grens is instelbaar
                            # (settings 'max_speech_sec', 0 = onbeperkt) -- zie speech_cap()
 SILENCE_RMS = 120          # speech measures ~4000, a quiet room ~40. Below this we
@@ -215,6 +218,7 @@ class Recorder:
         self.preroll = collections.deque(maxlen=int(PREROLL_SEC * SAMPLE_RATE / BLOCK))
         self.lock = threading.Lock()
         self.last_used = 0.0
+        self._open_ev = None   # Event van een lopende open-poging; None = geen bezig
         threading.Thread(target=self._reap_idle, daemon=True).start()
 
     def _callback(self, indata, frames, time_info, status):
@@ -234,9 +238,55 @@ class Recorder:
             if idle:
                 self._close()
 
+    def _ensure_open(self) -> threading.Event:
+        """Zorg dat er een mic-stream komt, zónder er zelf op te wachten. Geeft een Event
+        terug dat vuurt zodra de poging klaar is (gelukt of niet).
+
+        Waarom niet gewoon openen: dit wordt aangeroepen vanuit de Fn-callback op de main
+        thread, en dat is de thread die de event-tap, de pill én het venster draait.
+        `InputStream()/start()` is een AUHAL-call die de HAL-mutex pakt -- gezond 70-110 ms
+        (gemeten), maar tijdens een apparaatwissel onbegrensd. Bleef die hangen, dan hing
+        de hele app: geen Fn, geen pill, niets. Nu blokkeert hooguit een werkthread.
+        Eén open tegelijk: een tweede Fn-druk wacht op dezelfde poging in plaats van er
+        nog een CoreAudio-call bovenop te gooien."""
+        with self.lock:
+            if self.stream is not None:
+                done = threading.Event()
+                done.set()
+                return done
+            if self._open_ev is None:
+                self._open_ev = threading.Event()
+                threading.Thread(target=self._open_worker, args=(self._open_ev,),
+                                 daemon=True).start()
+            return self._open_ev
+
+    def _open_worker(self, ev: threading.Event):
+        """De eigenlijke open, op een werkthread. Loopt CoreAudio vast, dan hangt alleen
+        deze thread -- de app blijft leven."""
+        stream = None
+        try:
+            stream = self._open()
+        finally:
+            stale = None
+            with self.lock:
+                if self._open_ev is ev:
+                    self._open_ev = None
+                if stream is not None:
+                    if self.stream is None:
+                        self.stream = stream
+                    else:
+                        stale = stream        # er stond er al één: deze weer opruimen
+            ev.set()
+            if stale is not None:             # buiten de lock: CoreAudio, zie _close()
+                try:
+                    stale.stop()
+                    stale.close()
+                except Exception:
+                    pass
+
     def _open(self):
         if self.stream is not None:
-            return
+            return None
         # Kies de mic elke keer opnieuw: koppel je AirPods los, dan wisselt de
         # keuze mee. Opnemen van een Bluetooth-mic zou je muziek naar telefoon-
         # kwaliteit trekken, dus 'auto' mijdt die - zie audiodev.py.
@@ -246,13 +296,14 @@ class Recorder:
         # apparaat -> stilte. audiodev.refresh() maakt de lijst live (zie de docstring
         # daar). Veilig hier: we bereiken dit alleen als self.stream None is (hierboven),
         # dus er staat geen stream open die de re-init zou raken.
-        # Bouw de stream in een lokale var en hang 'm pas ná start() aan self: zo
-        # blijft er nooit een half-geopende stream achter waardoor _open zichzelf
-        # zou overslaan. En vang CoreAudio-fouten hier af -- een AUHAL-hik na een
-        # apparaatwissel (bv. err=-10851) mag de Fn-callback op de main thread nooit
-        # als exceptie bereiken, want dan valt de event-tap stil. Faalt het openen,
-        # dan neemt dit dictaat niets op (de energie-poort verwerpt de stilte netjes)
-        # en probeert de volgende Fn-druk opnieuw.
+        #
+        # Draait ALTIJD op een werkthread (via _open_worker), nooit op de main thread:
+        # deze drie calls zijn de onbegrensde CoreAudio-calls van de app. Daarom geven we
+        # de gestarte stream terug in plaats van 'm zelf aan self te hangen -- de worker
+        # doet dat ónder de lock. En we vangen CoreAudio-fouten hier af (een AUHAL-hik na
+        # een apparaatwissel, bv. err=-10851): faalt het openen, dan neemt dit dictaat
+        # niets op (de energie-poort verwerpt de stilte netjes) en probeert de volgende
+        # Fn-druk opnieuw.
         try:
             audiodev.refresh()
             device, name, _ = audiodev.choose_input()
@@ -260,10 +311,10 @@ class Recorder:
                                     dtype="int16", blocksize=BLOCK,
                                     device=device, callback=self._callback)
             stream.start()
-            self.stream = stream
+            return stream
         except Exception as e:
-            self.stream = None
             print(f"  ! mic openen mislukt: {e}")
+            return None
 
     def _close(self):
         # Haal de stream-referentie ónder de lock weg, maar stop/sluit 'm BUITEN de
@@ -284,12 +335,24 @@ class Recorder:
                 print(f"  ! mic sluiten mislukt: {e}")
 
     def start(self, use_preroll: bool = True):
-        self._open()
+        # Eerst opnemen aanzetten, dán pas (eventueel) op de mic wachten. Zo landt elk
+        # blok dat binnenkomt meteen in frames, ook als de stream een fractie later pas
+        # leeft -- er gaat geen spraak verloren die we anders wél hadden gehad.
         with self.lock:
             # Zonder pre-roll als we net media hebben gepauzeerd: die 0,4 seconde
             # van vóór de Fn-druk bestaat dan uit muziek, en die wil Whisper niet.
             self.frames = list(self.preroll) if use_preroll else []
             self.recording = True
+            have_stream = self.stream is not None
+        if have_stream:
+            return          # normale geval: de mic staat al open, geen CoreAudio-call
+        # Koude start (eerste dictaat na IDLE_CLOSE_SEC). Openen gebeurt op een
+        # werkthread; hier wachten we er begrensd op, zodat het gedrag hetzelfde blijft
+        # als vroeger (openen kost 70-110 ms, dus ruim binnen de deadline) maar een
+        # vastgelopen CoreAudio de run loop nooit langer dan dit stilzet.
+        if not self._ensure_open().wait(OPEN_WAIT_SEC):
+            print(f"  ! mic reageert niet binnen {OPEN_WAIT_SEC:.2f}s; dit dictaat begint "
+                  "zodra hij open is (de app blijft gewoon werken)")
 
     def stop(self) -> np.ndarray:
         with self.lock:
