@@ -115,6 +115,12 @@ live in `REPLACEMENTS` in `cleanup.py`.
 **Language:** set `LANGUAGE` in `samflow.py` (`"nl"`, `"en"`, …) and re-run `install.sh`
 so the warm service matches. Put terms in your language in `lexicon.txt`.
 
+**Dictation length:** one dictation may run up to **5 minutes** by default; anything past
+that is cut off. Change it in **Preferences → Dictation → "Maximale lengte"** (1 / 2 / 5 /
+15 min, or unlimited), stored as `max_speech_sec` in `settings.json` — seconds, `0` means
+no limit. When a dictation *does* hit the ceiling you hear the error cue and the log says
+how many seconds were dropped: losing the tail of what you said is never silent.
+
 Other knobs (all near the top of their file): `SILENCE_RMS`, `PREROLL_SEC`,
 `IDLE_CLOSE_SEC` in `samflow.py`; `WARN`/model choice; `MIC_DEVICE` in `audiodev.py`;
 `PAUSE_MEDIA`, `FOLLOW_CARET`.

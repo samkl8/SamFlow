@@ -29,6 +29,9 @@ DEFAULTS = {
     "pill_size": "fors",       # staafjes-grootte: "compact" | "ruim" | "fors"
     "pill_motion": "soepel",   # animatie-gevoel: "soepel" | "kwiek"
     "model": "turbo",     # "turbo" | "large-v3" -- nog niet live, zie voorkeuren
+    "max_speech_sec": 300,  # hoe lang één dictaat mag duren; daarna knipt samflow de staart eraf.
+                            # 0 = onbeperkt. Stond ooit hard op 120 in samflow.py; dat kapte lange
+                            # berichten stil af. Zie MAX_SPEECH_SEC in samflow.py
     "polish_enabled": False,        # Route B (opt-in): lokaal AI-model poetst de tekst extra op na de regels. Uit = alleen Route A (cleanup.py); aan = ~0,6s + RAM. Zie polish.py
     "polish_model": "qwen2.5:3b",   # het Ollama-model voor het oppoetsen
     "auto_update": True,  # op de achtergrond bijwerken vanaf GitHub (fast-forward)

@@ -69,7 +69,8 @@ BLOCK = 1024               # 64 ms per block at 16 kHz
 PREROLL_SEC = 0.4          # audio kept from *before* you pressed Fn
 IDLE_CLOSE_SEC = 45        # close the mic after this long without a dictation
 MIN_SPEECH_SEC = 0.35      # shorter than this is a stray Fn tap, not speech
-MAX_SPEECH_SEC = 120
+MAX_SPEECH_SEC = 300       # terugval-plafond; de echte grens is instelbaar
+                           # (settings 'max_speech_sec', 0 = onbeperkt) -- zie speech_cap()
 SILENCE_RMS = 120          # speech measures ~4000, a quiet room ~40. Below this we
                            # never call Whisper: fed silence, it invents sentences.
 SOUND_CUES = True
@@ -119,6 +120,23 @@ def loudest_rms(audio: np.ndarray, window: int = SAMPLE_RATE // 10) -> float:
     return float(np.sqrt((blocks ** 2).mean(axis=1)).max())
 
 
+def speech_cap() -> int:
+    """Hoeveel seconden spraak we hooguit naar Whisper sturen; 0 = onbeperkt.
+
+    Instelbaar (Instellingen > Dicteren > Maximale lengte). Vroeger stond dit hard op
+    120s en werd de staart daarna stil afgeknipt -- een lang bericht kwam half aan zonder
+    dat je het merkte. Een kapotte of onzinnige waarde (negatief, tekst, een paar seconden)
+    valt terug op MAX_SPEECH_SEC: een handgeschreven settings.json mag de cap nooit per
+    ongeluk onder een normale zin duwen."""
+    try:
+        cap = int(settings.get("max_speech_sec"))
+    except (TypeError, ValueError):
+        return MAX_SPEECH_SEC
+    if cap == 0:
+        return 0
+    return cap if cap >= 5 else MAX_SPEECH_SEC
+
+
 def wav_bytes(frames: np.ndarray) -> bytes:
     buf = io.BytesIO()
     with wave.open(buf, "wb") as w:
@@ -130,12 +148,18 @@ def wav_bytes(frames: np.ndarray) -> bytes:
 
 
 def transcribe(audio: bytes) -> str:
+    # De timeout schaalt mee met de lengte van de opname. Vast op 60s was prima zolang
+    # de cap 2 minuten was, maar met een instelbare (of onbeperkte) lengte kapt hij een
+    # geslaagde transcriptie af: een warme turbo doet ~15-20x realtime, dus 15 minuten
+    # audio kost tientallen seconden. Helft-van-realtime geeft daar ruime marge boven,
+    # en 60s blijft de bodem voor korte dictaten (koud model, eerste dictaat na login).
+    seconds = max(0.0, (len(audio) - 44) / (SAMPLE_RATE * 2))   # 44 = WAV-header
     r = requests.post(
         SERVER_URL,
         files={"file": ("speech.wav", audio, "audio/wav")},
         data={"response_format": "json", "language": settings.get("language"),
               "temperature": "0", "prompt": cleanup.whisper_prompt()},
-        timeout=60,
+        timeout=max(60.0, seconds * 0.5),
     )
     r.raise_for_status()
     return r.json().get("text", "")
@@ -267,8 +291,17 @@ def handle(audio: np.ndarray, do_paste: bool = True, app: str = None):
     if seconds < MIN_SPEECH_SEC:
         hud_state("idle")
         return
-    if seconds > MAX_SPEECH_SEC:
-        audio = audio[: MAX_SPEECH_SEC * SAMPLE_RATE]
+    # Boven de cap knippen we de staart eraf -- maar nooit meer stilletjes. Wie tegen de
+    # grens loopt verliest tekst die hij wél heeft ingesproken; dat hoor en zie je nu
+    # (foutgeluid + regel in de log), zodat de knop in Instellingen vindbaar wordt.
+    cap = speech_cap()
+    if cap and seconds > cap:
+        audio = audio[: int(cap * SAMPLE_RATE)]
+        cue("error")
+        print(f"  ! dictaat van {seconds:.0f}s afgekapt op {cap}s (maximale lengte); "
+              f"{seconds - cap:.0f}s spraak niet meegenomen. "
+              f"Instellingen > Dicteren > Maximale lengte.")
+        seconds = float(cap)
 
     level = loudest_rms(audio)
     if level < SILENCE_RMS:
