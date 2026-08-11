@@ -90,6 +90,15 @@ Dit is de onderhoudslus van het project. Hoor je een woord dat er verkeerd uitko
   `HALLUCINATIONS` de tweede.
 - `loudest_rms()` meet het luidste venster van 100 ms, niet het gemiddelde. Een korte zin in
   een lange opname zou anders als stilte worden weggegooid.
+- **Tekst kwijtraken mag nooit stil gebeuren.** De maximale lengte is instelbaar
+  (`speech_cap()`, settings `max_speech_sec`, 0 = onbeperkt; default 5 min). Loopt een
+  dictaat tegen die grens, dan klinkt de foutcue en zegt de log hoeveel seconden eraf gingen.
+  Dat is de les van de oude harde `MAX_SPEECH_SEC = 120`: die knipte de staart eraf zonder
+  één signaal, dus wie lang dicteerde dacht dat de app hem "niet goed opnam".
+- **De request-timeout naar whisper-server schaalt mee met de lengte** (halve realtime, met
+  60s als bodem). Gemeten op een warme turbo: ~22x realtime, dus 5 minuten audio kost ~13s.
+  Een vaste 60s was prima bij een cap van 2 minuten, maar zou een geslaagde lange
+  transcriptie alsnog afbreken.
 - Blokkeer de CFRunLoop nooit. De Fn-callback moet meteen terugkeren; transcriberen gebeurt
   in een aparte thread. Doe je dat niet, dan mist de tap toetsaanslagen.
 - **Houd `Recorder.lock` nooit vast over een CoreAudio-call heen.** `stream.stop()/close()`
