@@ -115,6 +115,12 @@ live in `REPLACEMENTS` in `cleanup.py`.
 **Language:** set `LANGUAGE` in `samflow.py` (`"nl"`, `"en"`, …) and re-run `install.sh`
 so the warm service matches. Put terms in your language in `lexicon.txt`.
 
+**Dictation length:** one dictation may run up to **5 minutes** by default; anything past
+that is cut off. Change it in **Preferences → Dictation → "Maximale lengte"** (1 / 2 / 5 /
+15 min, or unlimited), stored as `max_speech_sec` in `settings.json` — seconds, `0` means
+no limit. When a dictation *does* hit the ceiling you hear the error cue and the log says
+how many seconds were dropped: losing the tail of what you said is never silent.
+
 Other knobs (all near the top of their file): `SILENCE_RMS`, `PREROLL_SEC`,
 `IDLE_CLOSE_SEC` in `samflow.py`; `WARN`/model choice; `MIC_DEVICE` in `audiodev.py`;
 `PAUSE_MEDIA`, `FOLLOW_CARET`.
@@ -145,10 +151,13 @@ effect on your next dictation, no restart.
 
 - **Cost:** ~0.6s extra per dictation once warm, and ~2 GB RAM while the model is loaded.
   Ollama's `keep_alive` frees that RAM a few minutes after you stop — so if your Mac is tight
-  on memory, just leave the toggle off.
-- **Safety net:** if Ollama isn't running, the model isn't pulled, it times out, or the result
-  drifts too far from the input, SamFlow silently falls back to the rules-based text. The polish
-  can never hang or corrupt a dictation — worst case is the same text you'd get with it off.
+  on memory, just leave the toggle off. Long dictations cost proportionally more: the model
+  has to write out everything you said, so a five-minute dictation can spend tens of seconds
+  polishing before the paste lands.
+- **Safety net:** if Ollama isn't running, the model isn't pulled, it times out, the answer got
+  cut off by the token limit, or the result drifts too far from the input, SamFlow silently
+  falls back to the rules-based text. The polish can never hang or corrupt a dictation — worst
+  case is the same text you'd get with it off.
 - **Trade-off:** a 3B model is fast but not perfectly faithful on hard cases (mid-sentence
   self-corrections), which is why it is opt-in. A larger model (`qwen2.5:7b`) is more faithful
   at ~2s and ~5 GB RAM. Change it via `polish_model` in `settings.json`.
@@ -173,6 +182,7 @@ Fn down ─► mic ─► Fn up ─► whisper-server ─► cleanup.py ─► p
 | `focus.py` | where is the user typing? caret → mouse-in-window → window |
 | `media.py` | pause Spotify/video while you hold Fn, resume after |
 | `audiodev.py` | pick the mic; avoid Bluetooth (keeps AirPods on full audio quality) |
+| `stall.py` | heartbeat: if the main thread ever freezes, log where it is stuck |
 | `macos/`, `install.sh` | the app bundle + launchd templates and the installer |
 
 ### Why whisper.cpp and not faster-whisper

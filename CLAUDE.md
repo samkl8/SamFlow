@@ -84,14 +84,55 @@ Dit is de onderhoudslus van het project. Hoor je een woord dat er verkeerd uitko
   dictaat herlezen via mtime-cache** (zoals lexicon) — een nieuwe snippet werkt meteen, zonder
   herstart. Sloop de mtime-sleutel niet weg.
 
+## Regels bij het aanpassen van polish.py
+- **Een afgekapt antwoord is gevaarlijker dan een raar antwoord.** Raakt het model
+  `num_predict` op (Ollama meldt dat als `done_reason == "length"`), dan stopt de tekst
+  middenin een zin — en `_sane` mérkt dat niet, want die kijkt alleen naar lengteverhouding.
+  Gemeten: een dictaat van 371 woorden kwam er op 89% van het origineel uit, netjes binnen
+  de vangrail, met de laatste alinea eraf. Sloop de `done_reason`-check niet weg, en verlaag
+  `num_predict` nooit tot een vaste waarde.
+- **Ruimte en timeout horen bij de lengte van de tekst, niet bij een constante**
+  (`_budget`). `_sane` accepteert tot ~1,6x de invoer, dus daar is `num_predict` op gedimen-
+  sioneerd. De timeout heeft wél een plafond (`_TIMEOUT_MAX`): een dictaat dat pas na een
+  minuut geplakt wordt is erger dan een dictaat zonder oppoetsen.
+- Test een wijziging hier nooit met herhaalde audio. Een model dat drie identieke alinea's
+  terecht samenvat, valt op `_sane` terug en dat lijkt dan een bug in je wijziging.
+
 ## Regels bij het aanpassen van samflow.py
 - **Nooit stilte naar Whisper sturen.** Het model verzint dan zinnen (echt gebeurd:
   2s stilte → `Www.Nil.Com.Br`). De energie-poort in `handle()` is de eerste verdediging,
   `HALLUCINATIONS` de tweede.
 - `loudest_rms()` meet het luidste venster van 100 ms, niet het gemiddelde. Een korte zin in
   een lange opname zou anders als stilte worden weggegooid.
+- **Tekst kwijtraken mag nooit stil gebeuren.** De maximale lengte is instelbaar
+  (`speech_cap()`, settings `max_speech_sec`, 0 = onbeperkt; default 5 min). Loopt een
+  dictaat tegen die grens, dan klinkt de foutcue en zegt de log hoeveel seconden eraf gingen.
+  Dat is de les van de oude harde `MAX_SPEECH_SEC = 120`: die knipte de staart eraf zonder
+  één signaal, dus wie lang dicteerde dacht dat de app hem "niet goed opnam".
+- **De request-timeout naar whisper-server schaalt mee met de lengte** (halve realtime, met
+  60s als bodem). Gemeten op een warme turbo: ~22x realtime, dus 5 minuten audio kost ~13s.
+  Een vaste 60s was prima bij een cap van 2 minuten, maar zou een geslaagde lange
+  transcriptie alsnog afbreken.
 - Blokkeer de CFRunLoop nooit. De Fn-callback moet meteen terugkeren; transcriberen gebeurt
   in een aparte thread. Doe je dat niet, dan mist de tap toetsaanslagen.
+- **Geen enkele call zonder bovengrens hoort op de main thread.** Dat is dezelfde thread als
+  de event-tap, de pill én het venster: blokkeert daar iets, dan is de app dood — geen Fn,
+  geen pill, niets, tot je 'm afknalt. `InputStream()/start()` was zo'n call: gezond 70-110 ms
+  (gemeten), maar tijdens een apparaatwissel wacht 'ie onbegrensd op de HAL-mutex. Daarom
+  opent de mic nu op een werkthread (`_ensure_open`/`_open_worker`) en wacht de Fn-callback
+  daar hooguit `OPEN_WAIT_SEC` op. Het normale geval is ongewijzigd (openen past ruim binnen
+  die deadline, en bij een warme stream raken we CoreAudio helemaal niet aan); het
+  pathologische geval kost je nu één dictaat in plaats van de hele app.
+- **`recording` gaat aan vóór het wachten op de mic**, niet erna. Zo landt elk blok dat
+  binnenkomt meteen in `frames`, ook als de stream een fractie later pas leeft — anders
+  verlies je bij een koude start de eerste woorden.
+- **Eén open-poging tegelijk** (`_open_ev`). Een tweede Fn-druk tijdens een hangende open
+  moet op diezelfde poging wachten, niet er nóg een CoreAudio-call bovenop gooien.
+- **stdout/stderr staan op regel-buffering** (bovenaan het bestand). De app-bundle start ons
+  via een shell die de uitvoer naar `~/Library/Logs/samflow.log` stuurt, en dan buffert Python
+  per kilobyte: precies de regels vóór een vastloper waren wég zodra je de app afknalde. Elke
+  vastloper wiste zo zijn eigen bewijs. Zet dit niet in de launcher — die zit in een ad-hoc
+  gesigneerde bundle, en elke wijziging daar kost je de mic- en toetsenbordpermissies.
 - **Houd `Recorder.lock` nooit vast over een CoreAudio-call heen.** `stream.stop()/close()`
   (en `.start()`) kunnen bij een apparaatwissel op de HAL-mutex blokkeren (AUHAL `err=-10851`).
   Deed `_close()` dat vroeger mét de lock, dan blokkeerde de Fn-callback (main thread) op diezelfde
@@ -103,6 +144,17 @@ Dit is de onderhoudslus van het project. Hoor je een woord dat er verkeerd uitko
   een geraiseerde fout in de listen-only event-tap zou 'm stilleggen.
 - Concludeer nooit uit "de stream opende" dat de mic werkt. Een geweigerde microfoon levert
   op macOS nullen op, geen fout. Vraag AVFoundation.
+
+## Regels bij het aanpassen van stall.py
+- De hartslag bestaat omdat een vastgelopen main thread niet zélf kan melden dat 'ie
+  vastzit. Een NSTimer tikt op de run loop, een achtergrondthread kijkt of die tik nog
+  komt, en dumpt anders de Python-stack van de main thread — dát is de call die hangt.
+- **De timer hoort in `NSRunLoopCommonModes`, niet in de default-mode.** Een default-mode-
+  timer staat stil zodra de run loop in event-tracking zit (menu open, venster slepen). Dat
+  is normaal gedrag en zou een valse stack-dump opleveren; één vals alarm en je gelooft de
+  volgende niet meer.
+- De ObjC-klassenaam moet uniek zijn in het hele proces (`_StallTicker`, want `hud.py` heeft
+  al een `_Ticker`). Twee ObjC-klassen met dezelfde naam laat PyObjC bij import knallen.
 
 ## Regels bij het aanpassen van hud.py
 - **De pill mag nooit focus pakken.** Het is een `NSPanel` met
@@ -153,6 +205,11 @@ Dit is de onderhoudslus van het project. Hoor je een woord dat er verkeerd uitko
   nog ~2,6 seconden open. Apps in `SCRIPTABLE` vragen we hun eigen `player state`.
 - **AppleScript naar een app die niet draait, start die app.** Altijd de `is running`-guard
   eromheen. Getest: zonder guard lanceert een Fn-druk Music.app.
+- **Elke `tell` naar een andere app krijgt `with timeout of 2 seconds`.** Zonder die clausule
+  wacht een Apple Event minuten op antwoord — en dit draait op de main thread bij Fn-omlaag,
+  dus een Spotify die even niet reageert (opstarten, updaten, zelf vastgelopen) bevriest de
+  héle app. Normaal antwoordt 'ie in ~27 ms, dus 2 seconden is al royaal. Een timeout komt
+  terug als fout, en die valt in `_really_playing` netjes terug op "ik weet het niet".
 - `NSAppleScript` in-process kost 27 ms, `osascript` als subproces 132 ms. Dit draait op de
   main thread bij Fn-omlaag, dus dat verschil is het verschil tussen wel en niet merkbaar.
 - MediaRemote *uitlezen* (`MRMediaRemoteGetNowPlayingApplicationIsPlaying`) is sinds macOS

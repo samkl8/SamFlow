@@ -78,6 +78,12 @@ MODE_CODES = ["basic", "app"]
 RETAIN_LABELS = ["7 dagen", "30 dagen", "Altijd"]
 RETAIN_VALUES = [7, 30, 0]     # 0 = altijd bewaren
 
+# Maximale lengte van één dictaat. Seconden, want zo leest samflow.handle() 'm.
+# 0 = onbeperkt: dan knipt er niets, maar bouwt een vergeten vastgezette opname wel
+# audio op in RAM (~115 MB per uur) en duurt de transcriptie navenant lang.
+LENGTH_LABELS = ["1 min", "2 min", "5 min", "15 min", "Onbeperkt"]
+LENGTH_VALUES = [60, 120, 300, 900, 0]
+
 
 # ---------- permissie-helpers (zelfstandig, zie module-docstring) ----------
 def _mic_ok():
@@ -448,6 +454,9 @@ class PrefsController(NSObject):
             self._grp_keycap("Sneltoets", "Ingedrukt houden = opnemen", "fn"),
             self._grp_drop("Vastzetten", "Zodat je Fn niet hoeft vast te houden",
                            LOCK_LABELS, LOCK_CODES, "lock_mode", "changeLockMode:"),
+            self._grp_drop("Maximale lengte", "Langer dan dit wordt afgekapt",
+                           LENGTH_LABELS, LENGTH_VALUES, "max_speech_sec",
+                           "changeMaxSpeech:", default_idx=2),
             self._grp_switch("polish_enabled"),
         ])
         y += SEC_GAP
@@ -552,6 +561,11 @@ class PrefsController(NSObject):
         i = sender.selectedSegment()
         if 0 <= i < len(LOCK_CODES):
             settings.set("lock_mode", LOCK_CODES[i])
+
+    def changeMaxSpeech_(self, sender):
+        i = sender.selectedSegment()
+        if 0 <= i < len(LENGTH_VALUES):
+            settings.set("max_speech_sec", LENGTH_VALUES[i])
 
     def changePosition_(self, sender):
         i = sender.selectedSegment()
