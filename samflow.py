@@ -29,6 +29,19 @@ import threading
 import time
 import wave
 
+# Regel-buffering afdwingen. De app-bundle start ons via een shell die stdout naar
+# ~/Library/Logs/samflow.log stuurt, en dan buffert Python in blokken van kilobytes.
+# Gevolg: precies de regels vlak vóór een vastloper stonden nog in de buffer en gingen
+# verloren zodra je de app afknalde -- elke vastloper wiste zijn eigen bewijs. (De
+# PYTHONUNBUFFERED in launchd/com.sam.samflow.plist geldt alleen voor de launchd-route,
+# niet voor de app-bundle.) Hier zetten, niet in de launcher: die zit in een ad-hoc
+# gesigneerde bundle en elke wijziging daar kost je de mic- en toetsenbord-permissies.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(line_buffering=True)
+    except Exception:
+        pass
+
 import numpy as np
 import requests
 import sounddevice as sd
