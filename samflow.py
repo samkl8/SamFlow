@@ -71,6 +71,7 @@ import media as media_module
 import polish
 import settings
 import snippets
+import stall
 import stats
 import telemetry
 
@@ -547,6 +548,11 @@ def run_daemon():
     CGEventTapEnable(tap, True)
 
     print("samflow draait. Houd Fn ingedrukt, praat, laat los. Ctrl-C stopt.")
+
+    # Hartslag op de main thread. Staat die stil, dan reageert de app nergens meer op;
+    # deze schrijft dan de stack van de main thread naar de log, zodat een vastloper
+    # zichzelf verklaart in plaats van sporenloos te verdwijnen. Zie stall.py.
+    stall.start()
 
     # Anonieme dagelijkse heartbeat (alleen tellen). Inert tot er een sink is
     # ingesteld en zolang share_usage aanstaat; draait op een eigen thread.
