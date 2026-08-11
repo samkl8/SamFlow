@@ -115,6 +115,19 @@ Dit is de onderhoudslus van het project. Hoor je een woord dat er verkeerd uitko
   transcriptie alsnog afbreken.
 - Blokkeer de CFRunLoop nooit. De Fn-callback moet meteen terugkeren; transcriberen gebeurt
   in een aparte thread. Doe je dat niet, dan mist de tap toetsaanslagen.
+- **Geen enkele call zonder bovengrens hoort op de main thread.** Dat is dezelfde thread als
+  de event-tap, de pill én het venster: blokkeert daar iets, dan is de app dood — geen Fn,
+  geen pill, niets, tot je 'm afknalt. `InputStream()/start()` was zo'n call: gezond 70-110 ms
+  (gemeten), maar tijdens een apparaatwissel wacht 'ie onbegrensd op de HAL-mutex. Daarom
+  opent de mic nu op een werkthread (`_ensure_open`/`_open_worker`) en wacht de Fn-callback
+  daar hooguit `OPEN_WAIT_SEC` op. Het normale geval is ongewijzigd (openen past ruim binnen
+  die deadline, en bij een warme stream raken we CoreAudio helemaal niet aan); het
+  pathologische geval kost je nu één dictaat in plaats van de hele app.
+- **`recording` gaat aan vóór het wachten op de mic**, niet erna. Zo landt elk blok dat
+  binnenkomt meteen in `frames`, ook als de stream een fractie later pas leeft — anders
+  verlies je bij een koude start de eerste woorden.
+- **Eén open-poging tegelijk** (`_open_ev`). Een tweede Fn-druk tijdens een hangende open
+  moet op diezelfde poging wachten, niet er nóg een CoreAudio-call bovenop gooien.
 - **stdout/stderr staan op regel-buffering** (bovenaan het bestand). De app-bundle start ons
   via een shell die de uitvoer naar `~/Library/Logs/samflow.log` stuurt, en dan buffert Python
   per kilobyte: precies de regels vóór een vastloper waren wég zodra je de app afknalde. Elke
