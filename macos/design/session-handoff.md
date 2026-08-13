@@ -3,7 +3,308 @@
 _Doel: na een `/clear` of in een nieuwe sessie meteen verder kunnen. Wat er staat, de
 staat van de code, openstaande draden en hoe je de app bedient._
 
-**Laatste update:** app-schil **Fase 1–5 klaar en live**; **design-pass: fundament + zijbalk
+**Laatste update (11 augustus 2026) — lange dictaten & de vastlopers (branch
+`fix/lange-dictaten-en-vastlopers`, 6 commits, gepusht, PR nog te openen):**
+
+Twee klachten uit echt gebruik, allebei tot op de oorzaak uitgezocht en per oorzaak atomair
+gecommit. Werkboom achteraf byte-vergeleken met de versies waarop de metingen zijn gedaan
+(identiek); elke commit compileert ook los, dus `git bisect` blijft bruikbaar.
+
+**A. "Hele lange berichten worden niet goed opgenomen" — twee onafhankelijke oorzaken.**
+
+- **De harde afkap (`f2aa3f0`).** `MAX_SPEECH_SEC` stond hard op 120s en `handle()` knipte de
+  staart er zonder één signaal af. Nu instelbaar: `speech_cap()` leest `max_speech_sec`
+  (default **300 = 5 min**, `0` = onbeperkt), UI-rij "Maximale lengte" in Dicteren (1/2/5/15
+  min of Onbeperkt). Onzin in settings.json (negatief, tekst, <5s) valt terug op de constante.
+  Afkappen geeft nu **foutcue + logregel** met het aantal verloren seconden. `transcribe()`
+  had een vaste `timeout=60`; die schaalt mee (halve realtime, 60s bodem) — anders breekt een
+  geslaagde lange transcriptie alsnog af.
+- **Het oppoetsen (`551736c`) — dit was de stille.** `num_predict` stond vast op 512 tokens:
+  het model stopte middenin een zin en `_sane()` zag dat niet, want die kijkt alleen naar
+  lengteverhouding. **Gemeten met een echt dictaat van 371 woorden: output op 89% van het
+  origineel, laatste alinea eraf, geen melding.** Met polish áán plakte je dus een half
+  bericht zonder het te weten. `_budget()` schaalt ruimte + timeout nu mee met de invoer
+  (plafond 60s), en `done_reason == "length"` is een harde vangrail geworden.
+
+**B. "SamFlow loopt af en toe vast" — symptoom: Fn dood, hele app dood tot herstart.**
+
+Mechanisme: de main thread is tegelijk de run loop van de event-tap, de pill én het venster.
+Op het Fn-omlaag-pad stonden twee **onbegrensde** C-calls. Bewijs dat deze Mac daar regelmatig
+in komt: **42 AUHAL-fouten in de log**, waarvan 39× `err='!obj'` (audio-object dat onder ons
+vandaan verdween) en 3× `Audio Hardware Not Running` vlak vóór de laatste herstart.
+
+- **`270646c` — log niet meer blok-bufferen.** De app-bundle start ons via een shell die stdout
+  naar de log stuurt → Python bufferde per kilobyte, dus **elke vastloper wiste zijn eigen
+  bewijs**. Aangetoond: het logbestand liep 22 minuten achter op het laatste dictaat. Alleen de
+  AUHAL-regels overleefden (die schrijft PortAudio in C naar stderr). Opgelost in `samflow.py`
+  zelf, **niet in de launcher**: die zit in een ad-hoc gesigneerde bundle en elke wijziging daar
+  kost je de mic- en toetsenbordpermissies. (`PYTHONUNBUFFERED` in `com.sam.samflow.plist` geldt
+  alleen voor de launchd-route — **die service is niet geladen**, de app draait via de bundle.)
+- **`56532fb` — `stall.py` NIEUW.** NSTimer tikt op de run loop, achtergrondthread kijkt of die
+  tik nog komt; >2s stil → **Python-stack van de main thread naar de log**. Timer in
+  `NSRunLoopCommonModes` (default-mode staat stil bij menu-tracking → vals alarm). Klassenaam
+  `_StallTicker`, want `hud.py` heeft al een `_Ticker` en ObjC-namen zijn procesbreed.
+- **`fb18b02` — de mic gaat niet meer open op de main thread.** `InputStream()/start()` pakt de
+  HAL-mutex: gezond 70-110 ms, tijdens een apparaatwissel onbegrensd. Nu `_ensure_open()` /
+  `_open_worker()` op een werkthread, met `OPEN_WAIT_SEC = 0,25s` als deadline in de callback.
+  `recording` gaat aan **vóór** het wachten (anders verlies je de eerste woorden), en één
+  open-poging tegelijk via `_open_ev`. De eerdere fix in `_close()` ging over de *lock*, niet
+  over de *thread* — het openen stond er nog gewoon op.
+- **`d02eab9` — AppleScript-timeout.** `_really_playing()` stuurt bij elke Fn-druk een Apple
+  Event naar Spotify/Music; zonder `with timeout` wacht AppleScript minuten. Nu 2 seconden
+  (normaal antwoordt 'ie in ~27 ms). In de log stond vlak vóór de laatste vastloper 5× achter
+  elkaar `⏸ Spotify`.
+
+**Metingen (deze Mac, warme staat).** Transcriptie: 30s → 0,8s; 2 min → 5,1s; **5 min → 13,5s
+(~22× realtime, 1067 woorden)**. Mic openen: warm **0,01 ms** (was 71-109 ms), koud 116 ms;
+met een nagebootste hang van 10s geeft `start()` de main thread na 256 ms terug en pakt het
+dictaat alsnog audio op zodra de mic opengaat. Oppoetsen: 371 woorden → 7,2s, volledig.
+
+**Operationeel.** Branch gepusht, **PR nog niet geopend**:
+`https://github.com/samkl8/SamFlow/pull/new/fix/lange-dictaten-en-vastlopers`. Lokale `main`
+staat nog op `e44545a`; auto-update trekt dit pas na de merge. **De app draait al wél op deze
+code** (herstart 11 aug 17:51, draait uit de werkboom). Herstarten: `pkill -f
+"SamFlow.app/Contents/MacOS/SamFlow"; pkill -f samflow.py` → `open -a SamFlow`;
+**whisper-server (launchd) nooit meeherstarten**.
+
+**Openstaand.** (1) PR openen + mergen = release. (2) De design-mockups en dit handoff-bestand
+staan nog **bewust ongecommit** — ander werk, niet in deze PR gestopt. (3) Loopt het tóch nog
+een keer vast: `grep "main thread staat" ~/Library/Logs/samflow.log` geeft nu de hangende call;
+`sample $(pgrep -f samflow.py) 5` geeft de C-stack erbij. Pas dán weten we zeker of CoreAudio
+het was — dat is met dit werk nog steeds *niet* bewezen, alleen zeer aannemelijk gemaakt.
+
+**Correctie op eigen werk deze sessie:** de nieuwe `stall.py`-sectie belandde eerst midden in
+de samflow-regels van CLAUDE.md (drie bullets hingen onder de verkeerde kop); rechtgezet vóór
+het committen.
+
+---
+
+**Laatste update (22 juli 2026) — dashboard-heatmap, snippets & "Jouw stem" (PR #9 → main `e44545a`, GEMERGED):**
+
+Voortbordurend op Wispr-inspiratie: drie features + een layout-fix, gebouwd op branch
+`feat/heatmap-en-snippets`, headless geverifieerd, per onderdeel atomair gecommit. **PR #9
+gemerged → lokale `main` = `e44545a`** (auto-update = release; lokale repo staat weer op
+`main`, ff-only ok). Design-mockups in `macos/design/` (buiten git, ter beoordeling).
+
+- **Correctie op de vorige handoff:** de oppoets-fix `ac1457f` (few-shot vakantie-zin-lek) is
+  **niet** in PR #8 meegegaan — die merge stopte bij `ce27aa7`; `ac1457f` werd 17 min ná de
+  merge gecommit en bleef op de branch staan. Nu alsnog gereleased als ancestor in PR #9.
+
+- **Reeks-heatmap (feat, mainwindow.py + stats.py).** Het "Reeks"-tegeltje vervangen door een
+  GitHub-achtige kalender-heatmap (groen = merk); streak-getal in de kaartkop + "langste · N
+  dagen". `_Heatmap` NSView: kiest week-kolommen op vensterbreedte (`_heatmap_layout` /
+  `_heatmap_height`, pitch gecapt op 17), niveaus 1-4 t.o.v. 85e percentiel, hover → woorden/dag
+  via **één tracking-area met `NSTrackingMouseMoved`** (werkt zonder acceptsMouseMovedEvents).
+  Tooltip = grafiet-pil in drawRect_ + los label, binnen bounds geklemd. `stats.summary()` kreeg
+  `heatmap_days` ({iso: woorden}, 26 wk) + `longest_streak`.
+
+- **Snippets (feat, `snippets.py` NIEUW + samflow.py + mainwindow.py).** Trigger-frase → expansie
+  ("mijn linkedin" → URL). **Laatste pijplijn-laag** in `handle()` (ná cleanup én polish),
+  fail-silent. Matcher = zelfde belofte als `lexicon.canonicalise`: hele frase op woordgrenzen
+  (`(?<!\w)…(?!\w)`), genormaliseerd, **één regex-pas langste-eerst** (ingevoegde expansie wordt
+  niet zelf opnieuw gescand). Opslag `~/Library/Application Support/SamFlow/snippets.json` (0600,
+  mtime-cache, per dictaat herlezen). UI: rustige kaart onderin **Woordenlijst** (geen 5e tab),
+  `_present_sheet("snippet")` = trigger-veld + meerregelige expansie. CLAUDE.md kreeg een
+  snippets-sectie met de invarianten.
+
+- **"Jouw stem"-kaart (feat, mainwindow.py + stats.py + history.py).** Feitelijke voice-samenvatting
+  onderaan Overzicht, **net boven Recent**: spreektempo (`wpm`), gem. lengte (`avg_len`),
+  piek-dagdeel (dagdeel-staafjes) + "meest gezegd" (**alleen bij historie-aan** → `history.top_words()`,
+  stopwoorden weg; anders een "zet historie aan"-uitnodiging) + stijl-chip (afgeleid label uit
+  lengte+tempo via `_voice_style`, **géén LLM**). `stats.record()` telt nu ook het dagdeel bij —
+  **inhoudsloos: wannéér je dicteert, nooit wát** (oude dagen missen `dayparts`, dus de piek vult
+  zich pas vanaf nieuwe dictaten). Bewust géén gamification/share/persoonlijkheid ("geen slop" —
+  expliciete Sam-voorkeur).
+
+- **Layout-fix (fix, mainwindow.py + stats.py).** 3 tegels lieten een gat in de 2-koloms-stand;
+  4e tegel **"Totaal gedicteerd"** (`stats.total_words`) teruggebracht → even grid (2×2 / 4×1).
+  Niet naar 3-koloms geforceerd (dan kappen labels af op smalle vensters).
+
+**Nieuw bestand:** `snippets.py`. **Gewijzigd:** `stats.py`, `history.py`, `mainwindow.py`,
+`samflow.py`, `CLAUDE.md`. **Design-mockups (untracked, buiten PR, ter referentie):**
+`insights-upgrade-`, `insights-snippets-sober-`, `snippets-`, `jouw-stem-`,
+`jouw-stem-plaatsing-mockup.html`.
+
+**Operationeel:** lokale `main` = `e44545a` = release. Branch `feat/heatmap-en-snippets` mag
+opgeruimd (lokaal + remote). App draait live met de nieuwe code. Herstart = `pkill -TERM -f
+"Code/samflow/samflow.py"` → `open -a "SamFlow"`; **whisper-server (launchd, pid ~1066) nooit
+meeherstarten**. `screencapture` blijft geblokkeerd → headless verifiëren + Sam laten kijken.
+
+**Openstaand / volgende ideeën (besproken, nog te bouwen):** Route B-setupkaart (mockup
+`polish-setup-mockup.html`, goedgekeurd), per-app "waar je dicteert" (privacy-keuze),
+Engelse UI-lokalisatie (groot, eigen traject).
+
+---
+
+**Laatste update (21 juli 2026) — media stilhouden (PR #7 → main `3d7063a`) + vier fixes (PR #8, open):**
+
+Onderhoudslus vanuit echt gebruik. PR #7 gemerged naar `main` (= release); PR #8 staat **open** met vier
+fixes op branch `fix/menubalk-paneel-en-historie` (3 commits). App na elke stap herstart en live geverifieerd.
+
+- **Media stilhouden tijdens dictaat (feat, PR #7 → main `3d7063a`).** Spotify/Music werden al
+  gepauzeerd, maar een `<video>` in de browser (YouTube) niet. Twee oorzaken, gemeten: (1) webaudio
+  klinkt niet onder de browsernaam maar via een **hulpproces** (`com.apple.WebKit.GPU` voor Safari,
+  `… Helper (Renderer)` voor Chromium) → de browser-entries in `MEDIA_APPS` matchten het geluidmakende
+  proces nooit; (2) `MRMediaRemoteSendCommand(pause)` gaat naar de **éne now-playing-app** (vaak een al
+  gepauzeerde Spotify), niet de tab — pauze raakte de video niet en de `play` erna startte juist Spotify.
+  **Fix:** tweede laag naast pauzeren — zolang we opnemen én er webcontent klinkt (`web_sounding()` in
+  media.py) dempen we de **systeem-output** via NSAppleScript in-process (0,6 ms). Aparte boekhouding
+  `_muted` naast `_paused`: `play` sturen we alléén voor wat we écht pauzeerden (een YouTube-tab start
+  dus nooit je Spotify), en we ontdempen nooit een gebruiker die zélf op mute stond. Mute is systeembreed
+  → gaat alleen aan als er webcontent klinkt. UI: toggle **"Media pauzeren" → "Media stilhouden tijdens
+  dictaat"** (+ ondertitel). Files: media.py, samflow.py, panel.py, prefs.py, settings.py, CLAUDE.md.
+
+- **Menubalk-paneel opende niet over andere/fullscreen apps (fix, PR #8, panel.py).** Klikken vanuit een
+  andere app deed niets: de popover flitste open en sloot meteen. Drie gestapelde oorzaken (met tijdelijke
+  logging blootgelegd): (1) op recente macOS (Darwin 25) doet **`activateIgnoringOtherApps_` niets** voor
+  een accessory-app → app werd niet actief (`active=False`) → een **transient** popover sluit dan meteen;
+  nu de nieuwe coöperatieve **`NSApplication.activate()`** (macOS 14+, via `respondsToSelector_("activate")`).
+  (2) Popover is nu **`ApplicationDefined`** (sluit niet vanzelf); we sluiten 'm zelf bij een klik buiten de
+  app via een **global mouse-monitor + debounce** (zodat klik-op-icoon-om-te-sluiten niet heropent). (3) Het
+  venster krijgt **`CanJoinAllSpaces | FullScreenAuxiliary`** → paneel komt mee naar de actieve Space, óók
+  een fullscreen-app op een ander scherm (anders landde 'ie op de home-desktop en zag Sam 'm niet).
+
+- **Historie-scroll hakkelde (fix, PR #8, mainwindow.py).** Bij honderden dictaten staan er ~1700
+  transparante, zelf-tekenende views in de documentView. Zonder lagen kan de scrollview (drawsBackground=
+  False, niet-opaak) geen **copy-on-scroll** doen → hertekent elke scrollstap de hele zichtbare inhoud.
+  **Fix:** `documentView.setWantsLayer_(True)` in `show_tab` (geldt voor elke tab; overleeft een reflow
+  omdat `_reflow` via `show_tab` herbouwt) → GPU composit cached lagen.
+
+- **Kopieer-bevestiging viel over tekst (fix, PR #8, mainwindow.py).** "✓ Gekopieerd" was breder dan
+  "Kopieer" en groeide (rechterrand vast) naar links over het woordtal/dictaat heen. Nu een **kaal,
+  gecentreerd groen vinkje** zonder chip-achtergrond (`drawRect_` slaat de pill over zolang `_flashing`).
+
+- **Oppoets-model plakte een few-shot voorbeeldzin (fix, PR #8, polish.py).** Sams bug: "plakt soms iets
+  over mijn vakantie dat ik helemaal niet zei." De zin *"…de vakantieplanning, want ik ben volgende week
+  weg"* is het **láátste few-shot voorbeeld** in polish.py en bestaat nergens anders in de pijplijn.
+  `qwen2.5:3b` echode dat voorbeeld soms in z'n output; de lengte-vangrail (`_sane`) zag het niet.
+  **Uitgesloten:** de warme whisper-server geeft op stilte `***` terug (geen cross-request context-bleed);
+  pre-roll (0,4s) + Recorder-buffer legen netjes. **Fix:** `_leaks_fewshot()` valt terug op de opgeschoonde
+  (Route-A) tekst zodra een few-shot-fragment in de output staat dat niet in het dictaat stond
+  (genormaliseerd vergeleken, dus een échte dictatie van die zin blijft staan). Unit-getest.
+
+**Git/release-staat:** PR #7 gemerged → **lokale `main` = `3d7063a`**. **PR #8 staat OPEN** met 3 commits
+(`f8cebc9` paneel, `ce27aa7` scroll+kopieer, `ac1457f` polish) op `fix/menubalk-paneel-en-historie`. **Ná de
+merge: lokale repo terug naar `main`** (staat nu op de feature-branch — anders botst de ff-only-auto-update).
+De pre-existing untracked design-bestanden (`hosted-versie-plan.md`, `polish-setup-mockup.html`) en dít
+handoff-bestand bleven bewust buiten beide PR's.
+
+**Operationeel (bevestigd deze sessie):** herstart = `pkill -TERM -f "Code/samflow/samflow.py"` (de bundel-
+wrapper `wait`t op z'n kind en sluit vanzelf mee) → `open -a "SamFlow"`. **whisper-server is een lós proces**
+(launchd `com.sam.samflow-server`, pid ~1066) — **nooit meeherstarten** (koud = 11s, model kwijt). Hoofdvenster
+programmatisch openen: nóg een keer `open -a "SamFlow"` = reopen-event (`applicationShouldHandleReopen_`).
+`screencapture` blijft geblokkeerd in de shell (geen Screen Recording-recht) → headless verifiëren + Sam
+laten kijken.
+
+---
+
+**Laatste update (19 juli 2026, avond) — tester-feedback + polish, PR #4/#5/#6 → main (`cdfe8da`):**
+
+Een reeks fixes n.a.v. de tester + eigen polish op de Woordenlijst- en Instellingen-UI. Alles
+gemerged naar `main` (= release), lokale main = **`cdfe8da`**. De app is na elke stap herstart en
+live geverifieerd.
+
+- **Woordenlijst overal in-app bewerkbaar (fix, PR #4).** "Bewerken…" (Voorkeuren),
+  "Woordenlijst bewerken…" (menubalk-paneel) én "+ Nieuwe term" openden `lexicon.txt` met
+  `open -t` in een teksteditor. Dat bestand staat **buiten git** en bestaat niet op een verse
+  install → `open -t` faalde stil (exit 1) → bij de tester deed de knop **niets**. Alle drie
+  routeren nu naar de **Woordenlijst-tab** (de echte in-app editor) via lazy
+  `import mainwindow; open_main_window().show_tab(2)` (lui om de prefs↔mainwindow-cyclus te
+  vermijden). Dode `import lexicon` uit `hud.py`/`prefs.py` weg.
+- **Gebrand invoer-paneel (feat, PR #4).** De kale `NSAlert`-dialogen (blauw systeem-icoon +
+  blauwe knop) vervangen door een **sheet in Helder-stijl** (`_present_sheet` in `mainwindow.py`)
+  met een zelf-getekende **klei-accentknop `_ClayButton`** (bewust géén systeem-blauw). Drie modi:
+  `term` (meerregelig `NSTextView` — **meerdere termen tegelijk, één per regel**, hele lijst plakken
+  kan; dedup tegen bestaande/DEFAULT-termen, spaties-in-term behouden), `map` (twee velden
+  gehoord→canoniek) en `correct` (voorgevuld voorstel-woord). **"+ Nieuwe correctie"**-knop
+  toegevoegd aan de Fonetische-correcties-kaart (ontbrak — je kon alleen wissen of via een
+  voorstel). Verder: zichtbare **"Whisper" → "SamFlow"** in labels (docstrings/engine-refs blijven
+  Whisper), ondertitel **wrapt** i.p.v. afkappen, en het **×-knopje in een term-chip** verticaal
+  gecentreerd (volle chip-hoogte i.p.v. y=4/h=20).
+- **Menubalk-icoon (fix, PR #4).** `_STATUS_COLORS` (hud.py): idle was grijs, `done` klei (oranje,
+  zelfde als opnemen). Nu is **idle een template-image** (macOS kleurt mee: zwart in licht, wit in
+  donker) en **`done` groen** (net als de pill; brand: groen = klaar). Oranje = alleen nog "bezig"
+  (recording/thinking).
+- **Fn-status zichtbaar (fix, PR #4).** De grootste tester-bug: bij haar opende **Fn de
+  emoji-kiezer** bij elk dictaat. Oorzaak: de event-tap is **listen-only** (kan Fn niet opslokken)
+  en op haar Mac stond *Systeeminstellingen → Toetsenbord → "Druk op fn"* ≠ "Niets doen".
+  SamFlow detecteerde dit al (`fn_key_is_free()` / `prefs._fn_free()`) maar **printte het alleen
+  naar de console**. Nu is de Fn-regel in *Setup & permissies* een **live status** (klei ⚠ als
+  macOS Fn afpakt, groen ✓ als vrij; ververst in `_refresh_dots`). **Fix ligt bij de gebruiker:
+  Fn op "Niets doen" zetten** — de app kán Fn niet vrijmaken zonder de tap actief te maken (bewust
+  listen-only, zie CLAUDE.md).
+- **Oppoets-melding (fix, PR #4).** Zet je "AI-oppoetsen" aan zonder Ollama/model, dan viel polish
+  stil terug op de kale tekst (alleen een console-print). Nu doet `toggleSwitch_` een async
+  `polish.available()`-check en toont bij afwezigheid een dialoog met het `ollama pull
+  qwen2.5:3b`-commando + "Ollama installeren…"-knop. Polish blijft opt-in/default UIT, dus wie het
+  nooit aanzet merkt niks.
+- **"Vasthouden"-modus toegevoegd én weer weggehaald (PR #4 feat → PR #5 revert).** Op verzoek
+  gebouwd: nieuwe `lock_mode "hold"` — Fn >1,2s vasthouden-dan-loslaten = hands-free, stopt vanzelf
+  ~1,5s na je laatste woord (VAD in `Recorder._callback`, main-thread `NSTimer` roept `end()` —
+  **nooit vanuit de audio-callback**, dat zou op `Recorder.lock` deadlocken; latch-beslissing valt
+  op het loslaat-moment, dus geen extra timer nodig). **Daarna weer verwijderd** (schone revert van
+  `f2c31c0`): de 5e optie maakte de Vastzetten-rij te breed (titel afgekapt), en "Vasthouden" botst
+  met de default (Fn ingedrukt houden ÍS al de standaard, `lock_mode="off"`). De auto-stop-engine
+  leeft in de git-historie (`f2c31c0`) — als 'ie terugkomt: als **los schuifje "Stop bij stilte"**
+  onder de bestaande vastzet-manier, niet als 5e segment.
+- **Vastzetten als dropdown (fix, PR #6).** Zelfs met 4 opties claimde de segmented-control zoveel
+  breedte dat de ondertitel afkapte. Nu een `ui.Dropdown` via `_grp_drop` (zelfde patroon als
+  "Positie"): compact, ondertitel houdt op elke vensterbreedte ruimte. Handler ongewijzigd.
+
+**E-mail-opmaak (onderzocht, GEEN wijziging).** De tester miste dat SamFlow e-mails
+(hoi/inhoud/groetjes) niet mooi opmaakte zoals Wispr Flow. Bevinding: de **bestaande** polish-prompt
+dóét dit al (aanhef op eigen regel, alinea's, afsluiting met naam eronder) — getest tegen het echte
+`qwen2.5:3b`. Mijn poging de prompt te "verbeteren" met een e-mail-few-shot maakte het juist
+slechter (brak de alinea-splitsing, zette namen in HOOFDLETTERS). **`polish.py` dus onaangeroerd.**
+Waarom de tester het niet zag: waarschijnlijk een stille terugval (toggle stond uit, of een
+koude-start/timeout). Warm kost een lange mail ~2,6s (< de 8s-timeout).
+
+**Openstaand (niet gefixt): bug 2 — het laad-icoon valt weg bij dubbel-tik/vastzetten en "springt
+op groen".** Niet kunnen reproduceren; de state-overgangen náár "thinking" ogen correct in álle
+lock-varianten (hold/chord/double). Een tijdelijke state-trace stond even in `hud_state` (weer
+verwijderd). Volgende stap: trace terugzetten en Sam laten reproduceren om de echte volgorde met
+tijdstippen te zien.
+
+**Branch-hygiëne deze sessie:** PR #4 (woordenlijst + gebrand paneel + menubalk + Fn + polish) en
+PR #5 (Vasthouden-revert) waren al gemerged toen de dropdown-fix erbij kwam; die ging via een
+schone branch vanaf de actuele main (cherry-pick) als **PR #6**. Alles nu op `cdfe8da`; branches
+opgeruimd.
+
+---
+
+**Eerder op 19 juli 2026 — twee losse fixes gereleased:**
+
+- **Mic schakelde niet mee na een AirPods-wissel** (van AirPods terug naar de Mac gaf stilte).
+  Oorzaak: PortAudio (V19/CoreAudio) enumereert audio-apparaten **éénmalig bij proces-start** en
+  ziet hotplug niet; de app draait dagen. Na een wissel keek `choose_input()` op de bevroren
+  sounddevice-lijst → de stale default (AirPods) glipte langs de Bluetooth-check (verdwenen uit
+  de live CoreAudio-`transports()`) en kwam terug als "gewone default" → `InputStream(device=None)`
+  opende het verdwenen apparaat → AUHAL `-10851` → stilte. Bewezen met een software-simulatie van
+  de stale topologie én zichtbaar als `-10851`-spam in `samflow.log` tijdens de buggy sessie.
+  **Fix** (`samflow.py` + `audiodev.py`): `audiodev.refresh()` (`sd._terminate()/_initialize()`,
+  ~3 ms) vlak vóór `choose_input()` in `_open()` maakt de apparaatlijst weer live — veilig daar,
+  want `_open()` komt alleen zover als `self.stream` None is (geen open stream raakt de re-init).
+  Plus `audiodev.effective_input_name()`: een **live CoreAudio-uitlezing** voor de dashboard-mic-
+  chip (het `choose_input`-pad toonde daar na een wissel het verdwenen apparaat; deze is actueel
+  én veilig terwijl er opgenomen wordt). CLAUDE.md audiodev-sectie bijgewerkt. **PR #2 → main
+  (`f65293a`), gereleased.**
+- **Hover op de weekgrafiek** (`mainwindow.py`, `_WeekChart`): je ziet nu bij élke dag het
+  woordenaantal bij hover (voorheen alleen boven vandaag), en de gehoverde balk licht op. **Eén
+  tracking-area per dag-kolom** met enter/exit (betrouwbaarder dan `mouseMoved`, dat de venster-
+  vlag `acceptsMouseMovedEvents` vereist die standaard uit staat); kolom-index reist mee in
+  `userInfo` (komt als gewone Python-dict terug, dus `info["slot"]`, niet `objectForKey_`); lege
+  dagen tonen eerlijk "0"; verborgen boven vandaag (daar staat het vaste getal al). **PR #3 →
+  main (`9d69a93`), gereleased.**
+- **Zijvraag beantwoord:** de dashboard-groet ("Goedenavond, Sam") is **niet** hardgecodeerd —
+  `_greeting()` (mainwindow.py) haalt de voornaam uit `NSFullUserName()`, dus andere gebruikers
+  zien hun eigen naam + het juiste dagdeel. Geen wijziging nodig.
+
+Lokale `main` = origin op **`9d69a93`** (Merge PR #3). De draaiende app is herstart met beide
+fixes. Verificatie was headless (simulatie van de stale topologie, echt `Recorder`-pad met de
+refresh, hover-toestandsmachine + tracking-areas) — `screencapture` kan niet in de shell, dus de
+hover zichtbaar checken vraagt Sam op **Overzicht**.
+
+**Voorgaande staat (app-schil Fase 1–6 + design-pass):** app-schil **Fase 1–6 klaar**; **design-pass: fundament + zijbalk
 + dashboard + álle tabs (Historie/Woordenlijst/Instellingen) op de mockup**, én nu ook het
 **menubalk-paneel (`panel.py`) op de Helder-tokens** (zie Stap 5 hieronder). Het **venster is
 resizable** met live-meelopende content — óók Instellingen loopt nu live mee (was even "vult
@@ -13,10 +314,17 @@ mooi — er is nu géén grain), Positie als echte `.drop`-dropdown **KLAAR** (z
 resteert de instellingen-controls op autoresizing-ankers voor een écht "vastgelijmde"
 live-reflow (marginaal, werkt nu al via rebuild) en — bewust buiten Fase 6 — Model als échte
 keuze (dat is een feature: multi-model + server-plumbing, niet polish).
-**Alles staat ongecommit** in de working tree.
-De user (Sam) is tevreden met de huidige staat ("ja nice!").
+**Alles is gemerged naar `main` (PR #1) en dus RELEASED** via auto-update — de hele app-schil
+(Fase 1–6), de audio-deadlock-fix én de optionele Route B staan nu live, ook bij de andere
+gebruikers. Lokale `main` staat gelijk met de release (`e1acc8a`). De branch `app-schil-buildout`
+is opgegaan in main. Enige losse untracked file: `macos/design/polish-setup-mockup.html` (mockup
+van de Route B-setupkaart, ter beoordeling — nog niet ingebouwd/gecommit).
+De user (Sam) is tevreden met de huidige staat ("ja nice!"). **Volgende grote openstaande taak:
+Engelse UI-lokalisatie** (i18n-laag + aparte "App-taal"-selector; ~150–250 hardcoded NL-strings
+verspreid over panel/prefs/mainwindow/hud — eigen branch/PR, géén tuck-in). Zie sectie 7.
 
-**Audio-deadlock gefixt (deze sessie).** De app bevroor volledig: een stack-sample toonde de
+**Audio-deadlock gefixt (vorige sessie — niet te verwarren met de AirPods-hotplug-fix
+hierboven; dit ging over bevriezen, niet over de verkeerde mic).** De app bevroor volledig: een stack-sample toonde de
 Fn-tap (main thread) hangend op `Recorder.lock`, vastgehouden door de idle-reaper (`_close`)
 die tijdens `stream.stop()` op de CoreAudio HAL-mutex (`AudioOutputUnitStop`) bleef hangen na
 een apparaat-hik (AUHAL `err=-10851`). Fix in `samflow.py`: `_close()` swapt de stream-ref
@@ -212,22 +520,43 @@ Losse vensters testen: `--window` (hoofdvenster), `--prefs`, `--welcome`. `--che
 - Licht/donker-tokens checken: `NSAppearance.appearanceNamed_(...).performAsCurrentDrawingAppearance_(fn)`
   met `colorUsingColorSpace_(sRGB)`.
 
-## 6. Committen — let op
+## 6. Committen / release-staat — GEDAAN
 
-Nog niets gecommit. De working tree **mengt deze sessie met de vorige** (hud/panel/prefs/
-samflow/settings door beide aangeraakt) → een schone per-fase-commit kan niet zonder
-interactief hunks te splitsen, en dat kan deze omgeving niet. Opties: **één checkpoint-commit**
-van de hele tree (**zonder push = geen release**; let op: main = release-branch, dus een push
-deployt via auto-update), of doorwerken en later splitsen. **Alleen op verzoek.**
+**Alles is gecommit, gepusht en gemerged.** De hele sessie is per onderdeel op de branch
+`app-schil-buildout` gezet (~15 logische commits; de audio-deadlock-fix als eigen commit
+geïsoleerd via een tijdelijke revert-reapply), gepusht, en via **PR #1 naar `main` gemerged**
+(`e1acc8a`). Main = release-branch, dus dit is **live via auto-update**, ook bij de andere
+gebruikers. Lokale main staat gelijk.
+
+Herinnering voor de volgende keer: main is de directe release-branch. Werk op een branch,
+push die, en merge pas als het af is (mergen = uitrollen). De per-fase-commit-splitsing over
+een gemengde tree lukte via **whole-file commits + revert-reapply** voor het isoleren van één
+bugfix — interactief hunk-splitsen kan deze omgeving niet.
 
 ## 7. Vaste voorkeuren van de gebruiker (Sam) — meenemen
 
 - Instelbaar met verstandige default; gerenderde mockups om opties te zien.
 - Geen AI-slop; Helder-merk: grafiet `#1E1E22`, klei `#C67B52`, groen `#33B859`. Géén indigo/rood.
 - **Zijbalk:** SF-Symbol-iconen + klei-getinte actieve rij (koos dit boven de mockup-variant).
-- Functie-eerst, design daarna. **Route B** (lokaal oppoets-model, Fase O) is nu **gebouwd als
-  opt-in** — zie hieronder. Fase 7 (distributie) is grotendeels moot voor zijn doelgroep;
-  Fase 8 (telemetrie) blijft uitgesteld.
+- Functie-eerst, design daarna. **Route B** (lokaal oppoets-model, Fase O) is **gebouwd,
+  gereleased en opt-in** — zie hieronder; Sam test 'm nu een poos in echt gebruik. Fase 7
+  (distributie) is grotendeels moot voor zijn doelgroep; Fase 8 (telemetrie) blijft uitgesteld.
+
+### Openstaande taken (na de PR-#1-release)
+- **Engelse UI-lokalisatie (grootste openstaande taak, NIET quick).** Sam wil de hele schil +
+  het menu in het Engels kunnen zetten, zodat Engelse gebruikers 'm ook kunnen gebruiken. Nu
+  staan **alle ~150–250 UI-strings hardcoded inline** (panel/prefs/mainwindow/hud + welkom-
+  wizard + label-tabellen POS/LOCK/SIZE/MOTION/`_ROW_TEXT`), géén i18n-laag. Aanpak: een
+  `i18n.py` (`t("key")` + NL/EN-dicts), alle strings extraheren+keyen, vertalen, en een **aparte
+  "App-taal / Interface"-selector** in Weergave (LET OP: dat is iets ánders dan de bestaande
+  "Taal"=dicteertaal nl/en/auto voor Whisper). Views herbouwen bij wisselen + layout-checks
+  (EN-breedtes ≠ NL). **Eigen branch/PR**, geen tuck-in — een gerichte sessie van uren.
+- **Route B-setupkaart** (mockup `macos/design/polish-setup-mockup.html`, goedgekeurd door Sam):
+  een statuskaart onder de "AI-oppoetsen"-toggle die `polish.available()` leest — 4 toestanden
+  (klaar / model mist → "Model ophalen" `ollama pull` / bezig / Ollama ontbreekt → `brew`-hint).
+  Mockup klaar, **nog niet in AppKit gebouwd**. Níét in de verplichte eerste-start-wizard.
+- **Route B 7B-upgrade** (als de 3B te wiebelig blijkt in gebruik): `qwen2.5:7b`, ~4,7 GB, ~2s.
+- **Fase 6-restje:** instellingen-controls op autoresizing-ankers (marginaal, werkt al via rebuild).
 
 ### Route B — lokale AI-oppoets (gebouwd deze sessie, opt-in, default UIT)
 `polish.py`: hangt ná `cleanup.clean` (Route A) in `samflow.handle()`, op de handle-thread.
