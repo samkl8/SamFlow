@@ -771,8 +771,11 @@ class Hud:
 
         # De menubalk toont de status altijd; de zwevende pill is een aparte
         # voorkeur (show_pill), zodat je 'm uit kunt zetten en tóch het icoon houdt.
-        show_pill = settings.get("show_pill")
-        want_visible = state != "idle" and show_pill
+        # De volgorde is bewust: `state != "idle"` staat vóór de settings-lookup, zodat
+        # een idle app (verreweg de meeste tijd) hier gewoon niets doet. Deze tik loopt
+        # 60x per seconde en `settings.get` was een stat-syscall -- op de main thread, en
+        # dus goed voor een vastloper van seconden zodra het bestandssysteem hikte.
+        want_visible = state != "idle" and settings.get("show_pill")
 
         if state != self._shown:
             self._shown = state

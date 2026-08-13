@@ -14,6 +14,7 @@ net als lexicon.txt.
 import json
 import os
 import tempfile
+import time
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 SETTINGS_FILE = os.path.join(BASE, "settings.json")
@@ -46,7 +47,9 @@ DEFAULTS = {
     "history_days": 30,     # retentie in dagen (0 = altijd bewaren)
 }
 
-_cache = None  # (mtime, dict) -- zelfde patroon als lexicon._read
+_cache = None      # (mtime, dict) -- zelfde patroon als lexicon._read
+_checked = 0.0     # wanneer we die mtime voor het laatst opvroegen (monotoon)
+RECHECK_SEC = 0.2  # niet vaker dan dit een stat() doen; zie _load()
 
 
 def _read_file():
@@ -61,7 +64,20 @@ def _read_file():
 
 
 def _load():
-    global _cache
+    """De instellingen, met de mtime-cache die een wijziging meteen laat gelden.
+
+    De mtime-vraag zélf is óók gecachet (RECHECK_SEC), en dat is niet voor de sierlijkheid:
+    `os.path.getmtime` is een stat-syscall, en de 60 fps-tik van de pill riep `get()` per
+    frame aan. Zolang het bestandssysteem meewerkt kost dat niets -- maar hikt het even,
+    dan staat de hele app stil, want dit gebeurt op de main thread. Gemeten met de
+    stack-dump van stall.py: **6,2 seconden vast, met `getmtime` als bovenste frame**.
+    Een vijfde seconde vertraging op een wijziging merkt niemand; een bevroren app wel.
+    """
+    global _cache, _checked
+    now = time.monotonic()
+    if _cache is not None and now - _checked < RECHECK_SEC:
+        return _cache[1]
+    _checked = now
     try:
         mtime = os.path.getmtime(SETTINGS_FILE)
     except OSError:
@@ -96,5 +112,6 @@ def set(key, value):
     finally:
         if os.path.exists(tmp):
             os.remove(tmp)
-    global _cache
-    _cache = None  # forceer herlezen bij de volgende get()
+    global _cache, _checked
+    _cache = None      # forceer herlezen bij de volgende get()
+    _checked = 0.0     # ...en sla de stat-throttle over: onze eigen wijziging telt direct

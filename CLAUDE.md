@@ -223,6 +223,14 @@ Dit is de onderhoudslus van het project. Hoor je een woord dat er verkeerd uitko
   `NSWindowStyleMaskNonactivatingPanel`, getoond met `orderFrontRegardless()`. Gebruik nooit
   `makeKeyAndOrderFront_`: dan gaat de `Cmd+V` die erop volgt naar de pill in plaats van naar
   de editor waar je in stond.
+- **Geen bestandssysteem in de 60 fps-tik.** `_on_tick` deed per frame een
+  `settings.get("show_pill")`, en dat was tot voor kort een `stat()`-syscall (de mtime-cache
+  van settings). Zestig syscalls per seconde op de main thread kosten normaal niets — tot
+  het bestandssysteem één keer hikt, en dan staat de héle app stil. Zo gevangen door
+  `stall.py`: **6,2 seconden vast, met `getmtime` als bovenste frame.** Nu twee keer
+  afgedekt: de lookup staat achter `state != "idle"` (een idle app raakt 'm niet aan) en
+  `settings._load()` doet die stat hooguit vijf keer per seconde (`RECHECK_SEC`). Zet hier
+  nooit een nieuwe lees-uit-een-bestand-call in zonder diezelfde twee vragen.
 - **Alle AppKit-calls op de main thread.** Achtergrondthreads schrijven alleen naar
   `Hud.state` / `Hud.level`; een 60 fps `NSTimer` op de main thread leest die en tekent
   (60 i.p.v. 30 sinds de entrance/exit-springs — een soepele veer wil meer frames; de
