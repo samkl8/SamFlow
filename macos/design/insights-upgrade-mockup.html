@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SamFlow — Insights-upgrade (mockup)</title>
+</head>
+<body>
+<style>
+  /* ============ Helder-tokens (gelijk aan app-interface.html / theme.py) ============ */
+  :root{
+    --sg:#f4f4f6; --ss:#ffffff; --sunken:#f7f6f8; --si:#1b1b20; --sm:#5c5c66; --sf:#9a9aa4;
+    --sl:rgba(20,18,30,.10); --slx:rgba(20,18,30,.16);
+    --clay:#c67b52; --green:#33b859; --graphite:#1e1e22;
+    --titlebar:#ececef; --sidebg:#f0eff3; --chip:#ebeaee; --shadow:rgba(20,18,30,.22);
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --sg:#0e0e12; --ss:#17171c; --sunken:#121216; --si:#f1f1f4; --sm:#9a9aa4; --sf:#63636d;
+      --sl:rgba(255,255,255,.10); --slx:rgba(255,255,255,.17);
+      --titlebar:#202025; --sidebg:#1b1b20; --chip:#26262c; --shadow:rgba(0,0,0,.55);
+    }
+  }
+  :root[data-theme="light"]{
+    --sg:#f4f4f6; --ss:#ffffff; --sunken:#f7f6f8; --si:#1b1b20; --sm:#5c5c66; --sf:#9a9aa4;
+    --sl:rgba(20,18,30,.10); --slx:rgba(20,18,30,.16);
+    --titlebar:#ececef; --sidebg:#f0eff3; --chip:#ebeaee; --shadow:rgba(20,18,30,.22);
+  }
+  :root[data-theme="dark"]{
+    --sg:#0e0e12; --ss:#17171c; --sunken:#121216; --si:#f1f1f4; --sm:#9a9aa4; --sf:#63636d;
+    --sl:rgba(255,255,255,.10); --slx:rgba(255,255,255,.17);
+    --titlebar:#202025; --sidebg:#1b1b20; --chip:#26262c; --shadow:rgba(0,0,0,.55);
+  }
+
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--sg); color:var(--si); font-family:var(--sans);
+    -webkit-font-smoothing:antialiased; line-height:1.55; }
+  .wrap{ max-width:1000px; margin:0 auto; padding:44px 22px 90px; }
+
+  .lede{ max-width:680px; margin:0 auto 6px; text-align:center; }
+  .eyebrow{ font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--clay);
+    font-weight:700; margin:0 0 12px; }
+  h1{ font-size:clamp(25px,4.5vw,34px); letter-spacing:-.02em; margin:0 0 12px; line-height:1.1; }
+  .lede p{ font-size:15px; color:var(--sm); margin:0; }
+  .lede b{ color:var(--si); font-weight:600; }
+
+  .themebar{ display:flex; justify-content:center; margin:20px 0 26px; }
+  .seg{ display:inline-flex; background:var(--sl); border-radius:999px; padding:3px; gap:2px; }
+  .seg button{ font:inherit; font-size:12.5px; font-weight:600; color:var(--sm); border:0; background:transparent;
+    padding:5px 13px; border-radius:999px; cursor:pointer; transition:.15s; }
+  .seg button:hover{ color:var(--si); }
+  .seg button.on{ background:var(--ss); color:var(--si); box-shadow:0 1px 3px rgba(20,18,30,.14), 0 0 0 .5px var(--sl); }
+
+  /* ============ venster-chrome ============ */
+  .winscroll{ overflow-x:auto; margin:0 -4px; padding:4px; }
+  .win{ background:var(--ss); border-radius:12px; overflow:hidden; min-width:760px;
+    box-shadow:0 0 0 .5px var(--slx), 0 32px 60px -38px var(--shadow), 0 10px 26px -20px var(--shadow); }
+  .titlebar{ height:38px; background:var(--titlebar); display:flex; align-items:center; gap:8px;
+    padding:0 14px; border-bottom:.5px solid var(--sl); }
+  .lights{ display:flex; gap:8px; flex:0 0 auto; }
+  .lights span{ width:12px; height:12px; border-radius:50%; display:block; }
+  .lights .r{ background:#FF5F57; } .lights .y{ background:#FEBC2E; } .lights .g{ background:#28C840; }
+  .wintitle{ font-size:13px; font-weight:600; color:var(--si); margin:0 auto; padding-right:44px; }
+
+  .bars{ display:inline-flex; align-items:flex-end; gap:2px; height:13px; }
+  .bars i{ width:2.5px; border-radius:2px; background:currentColor; display:block; }
+  .bars i:nth-child(1){ height:42%; } .bars i:nth-child(2){ height:74%; }
+  .bars i:nth-child(3){ height:100%; } .bars i:nth-child(4){ height:58%; }
+
+  .app{ display:flex; min-height:520px; background:var(--ss); }
+  .side{ width:186px; flex:0 0 auto; background:var(--sidebg); border-right:.5px solid var(--sl);
+    padding:14px 10px; display:flex; flex-direction:column; }
+  .side .smark{ display:flex; align-items:center; gap:8px; padding:2px 10px 14px; }
+  .side .smark .tile{ width:24px; height:24px; border-radius:7px; background:linear-gradient(160deg,#2c2c31,#17171b);
+    display:flex; align-items:center; justify-content:center; box-shadow:inset 0 0 0 .5px rgba(255,255,255,.1); }
+  .side .smark .tile .bars{ height:11px; color:#f0f0f2; } .side .smark .tile .bars i{ width:2px; }
+  .side .smark b{ font-size:13.5px; letter-spacing:-.01em; }
+  .nit{ display:flex; align-items:center; gap:9px; padding:6.5px 10px; border-radius:8px;
+    font-size:13px; color:var(--sm); margin-bottom:1px; }
+  .nit .ic{ width:16px; height:16px; flex:0 0 auto; display:block; color:var(--sf); }
+  .nit.on{ background:color-mix(in srgb,var(--clay) 14%, transparent); color:var(--clay); font-weight:600; }
+  .nit.on .ic{ color:var(--clay); }
+  .side .spacer{ flex:1; }
+  .side .sfoot{ padding:8px 10px 0; border-top:.5px solid var(--sl); display:flex; flex-direction:column; gap:3px; }
+  .side .sfoot .st{ display:flex; align-items:center; gap:7px; font-size:11px; color:var(--sm); }
+  .side .sfoot .st::before{ content:""; width:6px; height:6px; border-radius:50%; background:var(--green); flex:0 0 auto; }
+  .side .sfoot .vv{ font-size:10.5px; color:var(--sf); margin-top:3px; }
+
+  .main{ flex:1 1 auto; min-width:0; padding:20px 22px 22px; }
+  .mainhead{ display:flex; align-items:baseline; gap:12px; margin:0 0 4px; }
+  .mainhead h3{ font-size:19px; letter-spacing:-.015em; margin:0; }
+  .mainhead .date{ font-size:12px; color:var(--sf); margin-left:auto; }
+  .mainsub{ font-size:12.5px; color:var(--sm); margin:0 0 16px; }
+  .mainsub b{ color:var(--si); }
+  .mainsub .lock{ color:var(--green); font-weight:600; }
+
+  /* ============ hero (grafiet-band, ongewijzigd) ============ */
+  .hero{ position:relative; border-radius:14px; overflow:hidden; padding:18px 20px 16px; margin-bottom:14px;
+    background:radial-gradient(70% 120% at 92% 125%, rgba(198,123,82,.16), transparent 60%),
+               linear-gradient(150deg,#2a2a30,#1a1a1f 60%,#17171b);
+    box-shadow:inset 0 0 0 .5px rgba(255,255,255,.08), 0 14px 28px -24px rgba(20,18,30,.5); color:#f1f1f4; }
+  .hero .hdate{ position:absolute; top:14px; right:18px; font-size:11.5px; color:rgba(241,241,244,.5); }
+  .hero .hgreet{ font-size:13px; font-weight:500; color:rgba(241,241,244,.72); margin:0 0 7px; }
+  .hero .hstat{ font-size:30px; font-weight:650; letter-spacing:-.025em; line-height:1.05; margin:0 0 14px; }
+  .hero .hstat span{ font-size:14px; font-weight:500; color:rgba(241,241,244,.62); margin-left:7px; }
+  .hchips{ display:flex; gap:16px; flex-wrap:wrap; position:relative; }
+  .hchips .st{ display:inline-flex; align-items:center; gap:7px; font-size:11.5px; color:rgba(241,241,244,.72); }
+  .hchips .st b{ color:#f1f1f4; font-weight:600; }
+  .hchips .st::before{ content:""; width:6.5px; height:6.5px; border-radius:50%; background:var(--green); }
+  .hero .hmark{ position:absolute; right:20px; bottom:16px; height:20px; gap:3px; color:rgba(240,240,242,.28); }
+  .hero .hmark i{ width:3.5px; }
+
+  /* ============ nieuw-badge op elementen ============ */
+  .newtag{ font-size:9px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--clay);
+    background:color-mix(in srgb,var(--clay) 15%, transparent); border-radius:5px; padding:2px 6px;
+    vertical-align:middle; margin-left:7px; }
+
+  /* ============ 3-up: WPM-gauge · Correcties · Totaal ============ */
+  .cards3{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; margin-bottom:12px; }
+  .card{ background:var(--sunken); border-radius:12px; padding:13px 15px; box-shadow:inset 0 0 0 .5px var(--sl);
+    min-width:0; }
+  .card .lbl{ font-size:10.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--sf); font-weight:700;
+    margin:0 0 8px; display:flex; align-items:center; }
+  .gaugewrap{ display:flex; align-items:flex-end; gap:12px; }
+  .gauge{ position:relative; width:104px; height:58px; flex:0 0 auto; }
+  .gauge svg{ display:block; }
+  .gauge .gval{ position:absolute; left:0; right:0; bottom:2px; text-align:center; }
+  .gauge .gnum{ font-size:22px; font-weight:650; letter-spacing:-.02em; }
+  .gauge .gunit{ font-size:9.5px; color:var(--sf); display:block; margin-top:-2px; }
+  .gside{ font-size:11px; color:var(--sm); padding-bottom:4px; }
+  .gside b{ color:var(--si); font-weight:600; font-variant-numeric:tabular-nums; }
+
+  .fixrow{ display:flex; align-items:baseline; gap:9px; font-size:12.5px; color:var(--si); margin-top:2px; }
+  .fixrow + .fixrow{ margin-top:7px; }
+  .fixrow .fn{ font-size:18px; font-weight:650; letter-spacing:-.02em; flex:0 0 34px; font-variant-numeric:tabular-nums; }
+  .fixrow .fx{ color:var(--sm); font-size:12px; }
+  .bignum{ font-size:30px; font-weight:650; letter-spacing:-.025em; line-height:1; }
+  .bigsub{ font-size:11.5px; color:var(--sf); margin-top:7px; }
+  .bigsub .up{ color:var(--green); font-weight:600; }
+
+  /* ============ streak-heatmap ============ */
+  .hm{ background:var(--sunken); border-radius:12px; padding:14px 16px 13px; box-shadow:inset 0 0 0 .5px var(--sl);
+    margin-bottom:12px; }
+  .hm .hmhead{ display:flex; align-items:baseline; gap:10px; margin-bottom:12px; }
+  .hm .hmhead h4{ font-size:15px; margin:0; font-weight:650; letter-spacing:-.01em; display:flex; align-items:center; }
+  .hm .hmhead .side{ all:unset; font-size:11px; color:var(--sf); margin-left:auto; }
+  .hmgrid{ display:flex; gap:11px; }
+  .hmdays{ display:grid; grid-template-rows:repeat(7,1fr); gap:3px; font-size:9px; color:var(--sf);
+    padding-top:15px; }
+  .hmdays span{ height:12px; line-height:12px; }
+  .hmcols{ flex:1 1 auto; overflow:hidden; }
+  .hmmonths{ display:flex; font-size:9.5px; color:var(--sf); margin-bottom:5px; padding-left:1px; }
+  .hmmonths span{ flex:1 1 0; }
+  .hmweeks{ display:flex; gap:3px; }
+  .hmweek{ display:grid; grid-template-rows:repeat(7,1fr); gap:3px; flex:1 1 0; }
+  .hmcell{ aspect-ratio:1; border-radius:3px; background:var(--chip); min-height:12px; }
+  .hmcell.l1{ background:color-mix(in srgb,var(--green) 26%, var(--chip)); }
+  .hmcell.l2{ background:color-mix(in srgb,var(--green) 52%, var(--chip)); }
+  .hmcell.l3{ background:color-mix(in srgb,var(--green) 76%, var(--chip)); }
+  .hmcell.l4{ background:var(--green); }
+  .hmlegend{ display:flex; align-items:center; gap:5px; justify-content:flex-end; margin-top:11px;
+    font-size:10px; color:var(--sf); }
+  .hmlegend i{ width:11px; height:11px; border-radius:3px; display:block; }
+
+  /* ============ 2-up: weekgrafiek + woorden ============ */
+  .two{ display:grid; grid-template-columns:1.15fr 1fr; gap:12px; margin-bottom:12px; }
+  .chartcard{ background:var(--sunken); border-radius:12px; padding:13px 16px 11px; box-shadow:inset 0 0 0 .5px var(--sl); }
+  .chartcard .chead{ display:flex; align-items:baseline; gap:10px; margin-bottom:10px; }
+  .chartcard .chead h4{ font-size:12.5px; margin:0; font-weight:600; }
+  .chartcard .chead span{ font-size:11px; color:var(--sf); margin-left:auto; }
+  .wk{ display:flex; align-items:flex-end; gap:9px; height:90px; }
+  .wk .day{ flex:1 1 0; display:flex; flex-direction:column; align-items:center; height:100%;
+    justify-content:flex-end; position:relative; }
+  .wk .bar{ width:100%; max-width:30px; border-radius:4px 4px 0 0; background:var(--clay); opacity:.42; }
+  .wk .day.today .bar{ opacity:1; }
+  .wk .dl{ font-size:10.5px; color:var(--sf); margin-top:6px; }
+  .wk .day.today .dl{ color:var(--si); font-weight:600; }
+  .wk .num{ position:absolute; top:-4px; transform:translateY(-100%); font-size:10px; font-weight:600; color:var(--si); }
+  .wkbase{ height:.5px; background:var(--slx); }
+
+  .wordlist{ list-style:none; margin:2px 0 0; padding:0; }
+  .wordlist li{ display:flex; align-items:center; gap:9px; font-size:12.5px; padding:5px 0; }
+  .wordlist li + li{ border-top:.5px solid var(--sl); }
+  .wordlist .rank{ font-size:10px; color:var(--sf); flex:0 0 14px; font-variant-numeric:tabular-nums; }
+  .wordlist .w{ color:var(--si); flex:1 1 auto; }
+  .wordlist .meter{ flex:0 0 62px; height:5px; border-radius:3px; background:var(--chip); overflow:hidden; }
+  .wordlist .meter i{ display:block; height:100%; background:var(--clay); opacity:.55; border-radius:3px; }
+  .wordlist .c{ font-size:11px; color:var(--sf); flex:0 0 auto; font-variant-numeric:tabular-nums; width:34px; text-align:right; }
+
+  /* ============ compacte klassieke tegels ============ */
+  .stats{ display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+  .stat{ background:var(--sunken); border-radius:12px; padding:11px 14px; box-shadow:inset 0 0 0 .5px var(--sl); }
+  .stat .lbl{ font-size:10.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--sf); font-weight:700; margin:0 0 4px; }
+  .stat .val{ font-size:21px; font-weight:600; letter-spacing:-.02em; line-height:1.1; }
+  .stat .sub{ font-size:11px; color:var(--sf); margin-top:4px; }
+
+  /* ============ annotaties ============ */
+  .cap{ font-size:12.5px; line-height:1.6; color:var(--sm); margin:26px 4px 0; max-width:80ch; }
+  .cap b{ color:var(--si); font-weight:600; }
+  .cap .new{ color:var(--clay); font-weight:600; }
+  .legendkey{ display:inline-flex; align-items:center; gap:6px; font-size:11px; color:var(--sm);
+    background:var(--sunken); border-radius:7px; padding:4px 10px; box-shadow:0 0 0 .5px var(--sl); margin:0 8px 8px 0; }
+  .legendkey .dot{ width:9px; height:9px; border-radius:3px; display:block; }
+  .keys{ display:flex; flex-wrap:wrap; margin:18px 4px 0; }
+
+  .costtable{ width:100%; border-collapse:collapse; margin:16px 0 0; font-size:12.5px; }
+  .costtable th, .costtable td{ text-align:left; padding:8px 10px; border-bottom:.5px solid var(--sl); vertical-align:top; }
+  .costtable th{ font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--sf); font-weight:700; }
+  .costtable td b{ color:var(--si); }
+  .pill{ font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; white-space:nowrap; }
+  .pill.free{ color:var(--green); background:color-mix(in srgb,var(--green) 14%, transparent); }
+  .pill.mid{ color:var(--clay); background:color-mix(in srgb,var(--clay) 14%, transparent); }
+  .pill.big{ color:var(--sf); background:var(--sl); }
+</style>
+
+<div class="wrap">
+  <div class="lede">
+    <p class="eyebrow">SamFlow · Insights-upgrade</p>
+    <h1>Het Overzicht, uitgebreid</h1>
+    <p>Een voorstel voor een rijkere Insights-pagina — in de geest van Wispr's dashboard, maar
+       <b>volledig lokaal berekend</b>. De meeste toevoegingen zitten al in de data die
+       <code style="font-family:var(--mono);font-size:.92em">stats.json</code> vandaag bijhoudt. Elementen met
+       <span class="newtag" style="margin:0">nieuw</span> zijn de toevoeging.</p>
+  </div>
+
+  <div class="themebar">
+    <div class="seg">
+      <button onclick="tset('light')" id="tl">Licht</button>
+      <button onclick="tset('dark')" id="td">Donker</button>
+    </div>
+  </div>
+
+  <div class="keys">
+    <span class="legendkey"><span class="dot" style="background:var(--green)"></span> Groen = jouw activiteit (het merk: groen = aan/klaar)</span>
+    <span class="legendkey"><span class="dot" style="background:var(--clay)"></span> Klei = accent op cijfers en meters</span>
+  </div>
+
+  <div class="winscroll"><div class="win">
+    <div class="titlebar">
+      <span class="lights"><span class="r"></span><span class="y"></span><span class="g"></span></span>
+      <p class="wintitle">SamFlow</p>
+    </div>
+
+    <div class="app">
+      <!-- zijbalk -->
+      <div class="side">
+        <div class="smark"><span class="tile"><span class="bars"><i></i><i></i><i></i><i></i></span></span><b>SamFlow</b></div>
+        <div class="nit on">
+          <svg class="ic" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3.75 6.7v4.6M7.25 4.9v8.2M10.75 3.5v11M14.25 5.8v6.4"/></svg>Overzicht</div>
+        <div class="nit">
+          <svg class="ic" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 5.2h12M3 9h9.2M3 12.8h6"/></svg>Historie</div>
+        <div class="nit">
+          <svg class="ic" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14 9 4l5 10M5.95 10.3h6.1"/></svg>Woordenlijst</div>
+        <div class="nit">
+          <svg class="ic" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 5h5.4M13.6 5H15M7.8 9H15M3 13h6.6"/><circle cx="11" cy="5" r="1.9"/><circle cx="5.2" cy="9" r="1.9"/><circle cx="12.2" cy="13" r="1.9"/></svg>Instellingen</div>
+        <div class="spacer"></div>
+        <div class="sfoot"><span class="st">Model warm · 0,5 s</span><span class="vv">1.2.0 · App-modus</span></div>
+      </div>
+
+      <!-- hoofd -->
+      <div class="main">
+        <div class="mainhead"><h3>Overzicht</h3><span class="date">dinsdag 21 juli</span></div>
+        <p class="mainsub"><span class="lock">● Lokaal</span> — alles hieronder wordt op deze Mac berekend uit <b>stats.json</b>. Niets verlaat je computer, geen account, geen percentiel-vergelijking met andere gebruikers.</p>
+
+        <!-- hero (ongewijzigd) -->
+        <div class="hero">
+          <span class="hdate">dinsdag 21 juli</span>
+          <p class="hgreet">Goedemiddag, Sam</p>
+          <div class="hstat">1.240<span>woorden vandaag</span></div>
+          <div class="hchips">
+            <span class="st"><b>Microfoon</b> — MacBook Pro</span>
+            <span class="st"><b>Rechten</b> — toegekend</span>
+            <span class="st"><b>Model</b> — warm, 0,5 s</span>
+          </div>
+          <span class="bars hmark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+        </div>
+
+        <!-- 3-up: WPM · Correcties · Totaal -->
+        <div class="cards3">
+          <div class="card">
+            <p class="lbl">Spreektempo <span class="newtag">nieuw</span></p>
+            <div class="gaugewrap">
+              <div class="gauge">
+                <svg width="104" height="58" viewBox="0 0 104 58">
+                  <path d="M8 54 A44 44 0 0 1 96 54" fill="none" stroke="var(--chip)" stroke-width="9" stroke-linecap="round"/>
+                  <path d="M8 54 A44 44 0 0 1 96 54" fill="none" stroke="var(--clay)" stroke-width="9" stroke-linecap="round"
+                        stroke-dasharray="138" stroke-dashoffset="41"/>
+                </svg>
+                <div class="gval"><span class="gnum">178</span><span class="gunit">woorden / min</span></div>
+              </div>
+              <div class="gside">Snelste<br><b>214 w/min</b></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <p class="lbl">Correcties deze week <span class="newtag">nieuw</span></p>
+            <div class="fixrow"><span class="fn">86</span><span class="fx">hoofdletters &amp; opmaak <span style="color:var(--sf)">(cleanup)</span></span></div>
+            <div class="fixrow"><span class="fn">31</span><span class="fx">woordenlijst-termen <span style="color:var(--sf)">(MarketOS, Klaviyo…)</span></span></div>
+            <div class="fixrow"><span class="fn">12</span><span class="fx">fonetische mappings</span></div>
+          </div>
+
+          <div class="card">
+            <p class="lbl">Totaal gedicteerd</p>
+            <div class="bignum">148.902</div>
+            <div class="bigsub"><span class="up">▲ 12%</span> woorden deze maand · sinds 12 mei</div>
+          </div>
+        </div>
+
+        <!-- streak-heatmap -->
+        <div class="hm">
+          <div class="hmhead">
+            <h4>Reeks — <span style="color:var(--green)">11 dagen</span> op rij <span class="newtag">nieuw</span></h4>
+            <span class="side" style="margin-left:auto;color:var(--sf);font-size:11px">langste reeks · 23 dagen</span>
+          </div>
+          <div class="hmgrid">
+            <div class="hmdays"><span>ma</span><span></span><span>wo</span><span></span><span>vr</span><span></span><span>zo</span></div>
+            <div class="hmcols">
+              <div class="hmmonths"><span>mei</span><span>jun</span><span>jul</span></div>
+              <div class="hmweeks" id="hmweeks"></div>
+            </div>
+          </div>
+          <div class="hmlegend">
+            minder
+            <i style="background:var(--chip)"></i>
+            <i class="hmcell l1"></i><i class="hmcell l2"></i><i class="hmcell l3"></i><i class="hmcell l4"></i>
+            meer
+          </div>
+        </div>
+
+        <!-- 2-up: weekgrafiek + meest gebruikte woorden -->
+        <div class="two">
+          <div class="chartcard">
+            <div class="chead"><h4>Woorden per dag</h4><span>deze week</span></div>
+            <div class="wk">
+              <div class="day"><div class="bar" style="height:52%;"></div><span class="dl">ma</span></div>
+              <div class="day"><div class="bar" style="height:72%;"></div><span class="dl">di</span></div>
+              <div class="day"><div class="bar" style="height:61%;"></div><span class="dl">wo</span></div>
+              <div class="day"><div class="bar" style="height:83%;"></div><span class="dl">do</span></div>
+              <div class="day today"><span class="num">1.240</span><div class="bar" style="height:78%;"></div><span class="dl">vr</span></div>
+              <div class="day"><div class="bar" style="height:16%;"></div><span class="dl">za</span></div>
+              <div class="day"><div class="bar" style="height:26%;"></div><span class="dl">zo</span></div>
+            </div>
+            <div class="wkbase"></div>
+          </div>
+
+          <div class="chartcard">
+            <div class="chead"><h4>Meest gebruikte woorden <span class="newtag">nieuw</span></h4><span>30 dagen</span></div>
+            <ul class="wordlist">
+              <li><span class="rank">1</span><span class="w">even</span><span class="meter"><i style="width:100%"></i></span><span class="c">312</span></li>
+              <li><span class="rank">2</span><span class="w">flow</span><span class="meter"><i style="width:74%"></i></span><span class="c">231</span></li>
+              <li><span class="rank">3</span><span class="w">klant</span><span class="meter"><i style="width:61%"></i></span><span class="c">190</span></li>
+              <li><span class="rank">4</span><span class="w">morgen</span><span class="meter"><i style="width:47%"></i></span><span class="c">147</span></li>
+              <li><span class="rank">5</span><span class="w">MarketOS</span><span class="meter"><i style="width:38%"></i></span><span class="c">119</span></li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- compacte klassieke tegels -->
+        <div class="stats">
+          <div class="stat"><p class="lbl">Tijd bespaard</p><div class="val">≈ 1 u 52 m</div><div class="sub">deze week · t.o.v. typen (40 wpm)</div></div>
+          <div class="stat"><p class="lbl">Snelste dictaat</p><div class="val">0,4 s</div><div class="sub">van loslaten tot geplakt</div></div>
+          <div class="stat"><p class="lbl">Dictaten deze week</p><div class="val">214</div><div class="sub">gemiddeld 6,2 woorden/dictaat</div></div>
+        </div>
+      </div>
+    </div>
+  </div></div>
+
+  <p class="cap"><b>Wat is nieuw, en wat kost het?</b> De kern van dit voorstel: bijna alles staat al in de data.
+    <code style="font-family:var(--mono)">stats.py</code> bewaart 400 dagen aan dag-aggregaten (dictaten, woorden,
+    spraak-seconden, snelste tijd). Daar volgt het meeste vanzelf uit.</p>
+
+  <table class="costtable">
+    <thead><tr><th style="width:24%">Element</th><th style="width:14%">Kosten</th><th>Waarom</th></tr></thead>
+    <tbody>
+      <tr><td><b>Spreektempo (WPM)</b></td><td><span class="pill free">gratis</span></td>
+        <td>Data ligt er al: <code style="font-family:var(--mono)">words ÷ speech_sec × 60</code>. Alleen nog een tegel + halve-cirkel-meter. <b>Geen nep-percentiel</b> ("Top 0,1%") zoals Wispr — dat vergt cloud-vergelijking; wij tonen jouw eigen gemiddelde + je snelste.</td></tr>
+      <tr><td><b>Streak-heatmap</b></td><td><span class="pill free">gratis</span></td>
+        <td>De streak wordt al berekend; de 400 dagen dag-data voedt de kalender direct. Puur een nieuwe view. Groen-intensiteit ís het merk.</td></tr>
+      <tr><td><b>Totaal gedicteerd</b></td><td><span class="pill free">gratis</span></td>
+        <td>Som over alle dagen — nu al in <code style="font-family:var(--mono)">total_dictations</code>-stijl aanwezig.</td></tr>
+      <tr><td><b>Correcties-teller</b></td><td><span class="pill mid">middel</span></td>
+        <td>Nieuw: <code style="font-family:var(--mono)">cleanup</code> en <code style="font-family:var(--mono)">lexicon</code> moeten per dictaat rapporteren hóéveel ze corrigeerden, en dat telt <code style="font-family:var(--mono)">stats.py</code> op. Inhoudsloos (alleen aantallen).</td></tr>
+      <tr><td><b>Meest gebruikte woorden</b></td><td><span class="pill mid">middel</span></td>
+        <td>Woordfrequentie — <b>geen LLM nodig</b>. "Meest gecorrigeerd" komt zelfs al uit de leer-loop van <code style="font-family:var(--mono)">lexicon</code> (die telt onbekende woorden die je vaak zei). "Meest gebruikt" vergt wél dat historie aan staat (anders is er geen tekst om te tellen).</td></tr>
+      <tr><td><b>Per-app-verdeling</b></td><td><span class="pill big">keuze</span></td>
+        <td>Wispr's "waar dicteer je" (Mail/Slack/…). Bij ons bewust <b>niet</b> in stats — die is inhoudsloos-by-design. App-namen zijn lichter dan tekst; kan als losse opt-in, of afgeleid uit historie. Privacy-afweging, geen gratis win.</td></tr>
+      <tr><td><b>"Your Voice"-profiel</b></td><td><span class="pill big">groot</span></td>
+        <td>Wispr's gegamificeerde persoonlijkheid ("hardly working, am I right?"). Vergt historie-tekst + lokale model-pass (Route B). En de speelse toon botst met "geen AI-slop". Een <i>feitelijke</i> variant (stijl-samenvatting) zou kunnen — apart traject.</td></tr>
+    </tbody>
+  </table>
+
+  <p class="cap" style="margin-top:22px"><b>Voorstel voor stap 1:</b> de twee gratis winsten — <span class="new">WPM-tegel</span> en
+    <span class="new">streak-heatmap</span> — plus de <span class="new">totaal-teller</span>. Grootste visuele sprong,
+    nauwelijks nieuw plumbing. De correcties-teller en woordfrequentie als stap 2; per-app en "Your Voice" zijn
+    aparte beslissingen.</p>
+</div>
+
+<script>
+  function tset(m){ document.documentElement.setAttribute('data-theme', m);
+    document.getElementById('tl').classList.toggle('on', m==='light');
+    document.getElementById('td').classList.toggle('on', m==='dark'); }
+  (function(){ var m = matchMedia('(prefers-color-scheme:dark)').matches ? 'dark':'light'; tset(m); })();
+
+  // heatmap-cellen: 13 weken (≈ mei–juli), plausibel patroon met een gat en een oplopende reeks
+  (function(){
+    var weeks = 13, host = document.getElementById('hmweeks');
+    // vast patroon (geen Math.random): intensiteit per dag, kolom-voor-kolom
+    var pat = [
+      [0,1,0,1,0,0,0],[1,1,2,1,1,0,0],[0,1,1,2,1,1,0],[2,2,1,1,2,0,1],
+      [1,2,2,3,1,1,0],[2,3,2,2,3,1,0],[1,2,3,2,2,0,1],[3,2,3,3,2,1,0],
+      [2,3,4,3,3,2,1],[3,4,3,4,3,1,0],[4,3,4,3,4,2,1],[3,4,4,4,3,2,0],
+      [4,4,3,4,4,0,0]
+    ];
+    for(var w=0; w<weeks; w++){
+      var col = document.createElement('div'); col.className='hmweek';
+      for(var d=0; d<7; d++){
+        var c = document.createElement('div'); var lvl = pat[w][d];
+        c.className = 'hmcell' + (lvl ? ' l'+lvl : '');
+        col.appendChild(c);
+      }
+      host.appendChild(col);
+    }
+  })();
+</script>
+</body>
+</html>

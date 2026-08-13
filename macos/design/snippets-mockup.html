@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SamFlow — Snippets (mockup)</title>
+</head>
+<body>
+<style>
+  :root{
+    --sg:#f4f4f6; --ss:#ffffff; --sunken:#f7f6f8; --si:#1b1b20; --sm:#5c5c66; --sf:#9a9aa4;
+    --sl:rgba(20,18,30,.10); --slx:rgba(20,18,30,.16);
+    --clay:#c67b52; --green:#33b859; --graphite:#1e1e22;
+    --titlebar:#ececef; --sidebg:#f0eff3; --chip:#ebeaee; --shadow:rgba(20,18,30,.22);
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --sg:#0e0e12; --ss:#17171c; --sunken:#121216; --si:#f1f1f4; --sm:#9a9aa4; --sf:#63636d;
+      --sl:rgba(255,255,255,.10); --slx:rgba(255,255,255,.17);
+      --titlebar:#202025; --sidebg:#1b1b20; --chip:#26262c; --shadow:rgba(0,0,0,.55);
+    }
+  }
+  :root[data-theme="light"]{
+    --sg:#f4f4f6; --ss:#ffffff; --sunken:#f7f6f8; --si:#1b1b20; --sm:#5c5c66; --sf:#9a9aa4;
+    --sl:rgba(20,18,30,.10); --slx:rgba(20,18,30,.16);
+    --titlebar:#ececef; --sidebg:#f0eff3; --chip:#ebeaee; --shadow:rgba(20,18,30,.22);
+  }
+  :root[data-theme="dark"]{
+    --sg:#0e0e12; --ss:#17171c; --sunken:#121216; --si:#f1f1f4; --sm:#9a9aa4; --sf:#63636d;
+    --sl:rgba(255,255,255,.10); --slx:rgba(255,255,255,.17);
+    --titlebar:#202025; --sidebg:#1b1b20; --chip:#26262c; --shadow:rgba(0,0,0,.55);
+  }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--sg); color:var(--si); font-family:var(--sans);
+    -webkit-font-smoothing:antialiased; line-height:1.55; }
+  .wrap{ max-width:1000px; margin:0 auto; padding:44px 22px 90px; }
+
+  .lede{ max-width:680px; margin:0 auto 6px; text-align:center; }
+  .eyebrow{ font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--clay); font-weight:700; margin:0 0 12px; }
+  h1{ font-size:clamp(25px,4.5vw,34px); letter-spacing:-.02em; margin:0 0 12px; line-height:1.1; }
+  .lede p{ font-size:15px; color:var(--sm); margin:0; }
+  .lede b{ color:var(--si); font-weight:600; }
+  code{ font-family:var(--mono); font-size:.92em; background:var(--sl); padding:1px 5px; border-radius:5px; }
+
+  .themebar{ display:flex; justify-content:center; margin:20px 0 26px; }
+  .seg{ display:inline-flex; background:var(--sl); border-radius:999px; padding:3px; gap:2px; }
+  .seg button{ font:inherit; font-size:12.5px; font-weight:600; color:var(--sm); border:0; background:transparent;
+    padding:5px 13px; border-radius:999px; cursor:pointer; transition:.15s; }
+  .seg button:hover{ color:var(--si); }
+  .seg button.on{ background:var(--ss); color:var(--si); box-shadow:0 1px 3px rgba(20,18,30,.14), 0 0 0 .5px var(--sl); }
+
+  .winscroll{ overflow-x:auto; margin:0 -4px; padding:4px; }
+  .win{ background:var(--ss); border-radius:12px; overflow:hidden; min-width:760px; position:relative;
+    box-shadow:0 0 0 .5px var(--slx), 0 32px 60px -38px var(--shadow), 0 10px 26px -20px var(--shadow); }
+  .titlebar{ height:38px; background:var(--titlebar); display:flex; align-items:center; gap:8px; padding:0 14px; border-bottom:.5px solid var(--sl); }
+  .lights{ display:flex; gap:8px; flex:0 0 auto; }
+  .lights span{ width:12px; height:12px; border-radius:50%; display:block; }
+  .lights .r{ background:#FF5F57; } .lights .y{ background:#FEBC2E; } .lights .g{ background:#28C840; }
+  .wintitle{ font-size:13px; font-weight:600; color:var(--si); margin:0 auto; padding-right:44px; }
+
+  .bars{ display:inline-flex; align-items:flex-end; gap:2px; height:13px; }
+  .bars i{ width:2.5px; border-radius:2px; background:currentColor; display:block; }
+  .bars i:nth-child(1){ height:42%; } .bars i:nth-child(2){ height:74%; }
+  .bars i:nth-child(3){ height:100%; } .bars i:nth-child(4){ height:58%; }
+
+  .app{ display:flex; min-height:520px; background:var(--ss); }
+  .side{ width:186px; flex:0 0 auto; background:var(--sidebg); border-right:.5px solid var(--sl); padding:14px 10px; display:flex; flex-direction:column; }
+  .side .smark{ display:flex; align-items:center; gap:8px; padding:2px 10px 14px; }
+  .side .smark .tile{ width:24px; height:24px; border-radius:7px; background:linear-gradient(160deg,#2c2c31,#17171b); display:flex; align-items:center; justify-content:center; box-shadow:inset 0 0 0 .5px rgba(255,255,255,.1); }
+  .side .smark .tile .bars{ height:11px; color:#f0f0f2; } .side .smark .tile .bars i{ width:2px; }
+  .side .smark b{ font-size:13.5px; letter-spacing:-.01em; }
+  .nit{ display:flex; align-items:center; gap:9px; padding:6.5px 10px; border-radius:8px; font-size:13px; color:var(--sm); margin-bottom:1px; position:relative; }
+  .nit .ic{ width:16px; height:16px; flex:0 0 auto; display:block; color:var(--sf); }
+  .nit.on{ background:color-mix(in srgb,var(--clay) 14%, transparent); color:var(--clay); font-weight:600; }
+  .nit.on .ic{ color:var(--clay); }
+  .nit .nb{ font-size:8.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--clay);
+    background:color-mix(in srgb,var(--clay) 16%, transparent); border-radius:4px; padding:1px 5px; margin-left:auto; }
+  .side .spacer{ flex:1; }
+  .side .sfoot{ padding:8px 10px 0; border-top:.5px solid var(--sl); display:flex; flex-direction:column; gap:3px; }
+  .side .sfoot .st{ display:flex; align-items:center; gap:7px; font-size:11px; color:var(--sm); }
+  .side .sfoot .st::before{ content:""; width:6px; height:6px; border-radius:50%; background:var(--green); flex:0 0 auto; }
+  .side .sfoot .vv{ font-size:10.5px; color:var(--sf); margin-top:3px; }
+
+  .main{ flex:1 1 auto; min-width:0; padding:20px 22px 22px; }
+  .mainhead{ display:flex; align-items:baseline; gap:12px; margin:0 0 4px; }
+  .mainhead h3{ font-size:19px; letter-spacing:-.015em; margin:0; }
+  .mainhead .btn{ margin-left:auto; }
+  .mainsub{ font-size:12.5px; color:var(--sm); margin:0 0 16px; max-width:64ch; }
+  .mainsub b{ color:var(--si); }
+
+  .btn{ font-family:inherit; font-size:12.5px; font-weight:600; border:none; cursor:pointer; padding:6px 13px; border-radius:8px;
+    background:var(--chip); color:var(--si); box-shadow:0 0 0 .5px var(--sl); white-space:nowrap; }
+  .btn.primary{ background:var(--clay); color:#fff; box-shadow:0 6px 16px -8px var(--clay); }
+  .btn.ghost{ background:transparent; box-shadow:none; color:var(--sm); }
+
+  /* ============ snippet-lijst ============ */
+  .group{ background:var(--sunken); border-radius:12px; box-shadow:inset 0 0 0 .5px var(--sl); overflow:hidden; margin-bottom:14px; }
+  .grouphead{ display:flex; align-items:center; gap:9px; padding:11px 15px 9px; }
+  .grouphead h4{ font-size:12.5px; margin:0; font-weight:700; letter-spacing:.02em; text-transform:uppercase; color:var(--sf); }
+  .grouphead .cnt{ font-size:11px; color:var(--sf); margin-left:auto; }
+
+  .srow{ display:flex; align-items:center; gap:12px; padding:11px 15px; }
+  .srow + .srow{ border-top:.5px solid var(--sl); }
+  .trig{ display:inline-flex; align-items:center; gap:6px; font-size:12.5px; font-weight:600; color:var(--si);
+    background:var(--chip); border-radius:999px; padding:5px 12px; flex:0 0 auto; box-shadow:0 0 0 .5px var(--sl); white-space:nowrap; }
+  .trig .mic{ width:11px; height:11px; color:var(--clay); }
+  .arrow{ color:var(--sf); font-size:13px; flex:0 0 auto; }
+  .expo{ flex:1 1 auto; min-width:0; font-size:12.5px; color:var(--sm); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .expo.mono{ font-family:var(--mono); font-size:11.5px; color:var(--si); }
+  .expo b{ color:var(--si); font-weight:500; }
+  .ttag{ font-size:10px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; padding:2px 7px; border-radius:6px; flex:0 0 auto; }
+  .ttag.url{ color:var(--clay); background:color-mix(in srgb,var(--clay) 13%, transparent); }
+  .ttag.txt{ color:var(--sm); background:var(--sl); }
+  .ttag.blk{ color:var(--green); background:color-mix(in srgb,var(--green) 13%, transparent); }
+  .srow .act{ display:flex; gap:2px; flex:0 0 auto; }
+  .iconbtn{ width:26px; height:26px; border-radius:7px; border:0; background:transparent; color:var(--sf); cursor:pointer;
+    display:flex; align-items:center; justify-content:center; }
+  .iconbtn:hover{ background:var(--chip); color:var(--si); }
+  .iconbtn svg{ width:14px; height:14px; }
+
+  /* ============ 'in actie' strook ============ */
+  .demo{ background:var(--sunken); border-radius:12px; box-shadow:inset 0 0 0 .5px var(--sl); padding:14px 16px; margin-bottom:14px; }
+  .demo h4{ font-size:12.5px; margin:0 0 11px; font-weight:700; letter-spacing:.02em; text-transform:uppercase; color:var(--sf); }
+  .demoline{ display:flex; align-items:flex-start; gap:10px; font-size:13px; margin-bottom:9px; }
+  .demoline:last-child{ margin-bottom:0; }
+  .demoline .who{ flex:0 0 74px; font-size:11px; color:var(--sf); padding-top:2px; }
+  .demoline .txt{ flex:1 1 auto; color:var(--si); }
+  .demoline .txt .say{ color:var(--sm); font-style:italic; }
+  .hl{ background:color-mix(in srgb,var(--green) 20%, transparent); color:var(--si); border-radius:5px; padding:1px 5px; font-weight:500; }
+  .hlt{ background:color-mix(in srgb,var(--clay) 18%, transparent); color:var(--si); border-radius:5px; padding:1px 5px; font-weight:500; }
+  .demoline .txt .url{ font-family:var(--mono); font-size:12px; }
+
+  /* ============ nieuwe-snippet sheet ============ */
+  .sheetback{ position:absolute; inset:0; background:rgba(10,10,14,.32); display:flex; align-items:center; justify-content:center; }
+  .sheet{ width:420px; max-width:92%; background:var(--ss); border-radius:14px; box-shadow:0 24px 60px -20px rgba(0,0,0,.5), 0 0 0 .5px var(--slx); overflow:hidden; }
+  .sheet .sh{ padding:16px 18px 4px; }
+  .sheet .sh h5{ font-size:15px; margin:0 0 3px; letter-spacing:-.01em; }
+  .sheet .sh p{ font-size:12px; color:var(--sm); margin:0; }
+  .sheet .body{ padding:12px 18px 6px; }
+  .field{ margin-bottom:13px; }
+  .field label{ display:block; font-size:11px; font-weight:600; color:var(--sm); margin:0 0 5px; }
+  .field label .hint{ color:var(--sf); font-weight:400; }
+  .inp{ width:100%; font-family:inherit; font-size:13px; color:var(--si); background:var(--sunken); border-radius:8px;
+    box-shadow:inset 0 0 0 .5px var(--slx); padding:8px 11px; }
+  .inp.mono{ font-family:var(--mono); font-size:12.5px; }
+  .inp.area{ min-height:64px; white-space:pre-wrap; line-height:1.5; }
+  .inp.trigline{ display:flex; align-items:center; gap:7px; }
+  .inp.trigline .mic{ width:13px; height:13px; color:var(--clay); flex:0 0 auto; }
+  .prev{ background:var(--sunken); border-radius:8px; box-shadow:inset 0 0 0 .5px var(--sl); padding:9px 11px; font-size:12px; color:var(--sm); margin-top:2px; }
+  .prev b{ color:var(--si); }
+  .prev .hl{ font-size:12px; }
+  .sheetfoot{ display:flex; align-items:center; gap:10px; padding:12px 18px 16px; }
+  .sheetfoot .fill{ flex:1; }
+
+  .cap{ font-size:12.5px; line-height:1.6; color:var(--sm); margin:26px 4px 0; max-width:82ch; }
+  .cap b{ color:var(--si); font-weight:600; }
+  .cap .new{ color:var(--clay); font-weight:600; }
+
+  .rules{ display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:16px 0 0; }
+  .rule{ background:var(--sunken); border-radius:11px; box-shadow:inset 0 0 0 .5px var(--sl); padding:13px 15px; }
+  .rule h5{ font-size:12.5px; margin:0 0 5px; display:flex; align-items:center; gap:7px; }
+  .rule h5 .n{ width:19px; height:19px; border-radius:6px; background:color-mix(in srgb,var(--clay) 15%, transparent);
+    color:var(--clay); font-size:11px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; }
+  .rule p{ font-size:12px; color:var(--sm); margin:0; line-height:1.55; }
+  .rule p b{ color:var(--si); }
+  @media (max-width:720px){ .rules{ grid-template-columns:1fr; } }
+
+  .altbox{ background:var(--sunken); border-left:3px solid var(--clay); border-radius:0 10px 10px 0;
+    padding:12px 15px; margin:18px 0 0; font-size:12.5px; color:var(--sm); }
+  .altbox b{ color:var(--si); }
+</style>
+
+<div class="wrap">
+  <div class="lede">
+    <p class="eyebrow">SamFlow · Snippets</p>
+    <h1>Zeg een trigger, plak een blok</h1>
+    <p>Een <b>trigger-frase → expansie</b>-lijst: je zegt <i>"mijn linkedin"</i> en SamFlow plakt de volledige URL.
+       Zit als een nieuwe laag ná transcriptie, met exact dezelfde belofte als de woordenlijst:
+       <b>nooit iets aanraken buiten de lijst</b>.</p>
+  </div>
+
+  <div class="themebar">
+    <div class="seg">
+      <button onclick="tset('light')" id="tl">Licht</button>
+      <button onclick="tset('dark')" id="td">Donker</button>
+    </div>
+  </div>
+
+  <div class="winscroll"><div class="win">
+    <div class="titlebar">
+      <span class="lights"><span class="r"></span><span class="y"></span><span class="g"></span></span>
+      <p class="wintitle">SamFlow</p>
+    </div>
+
+    <div class="app">
+      <!-- zijbalk met NIEUW Snippets-item -->
+      <div class="side">
+        <div class="smark"><span class="tile"><span class="bars"><i></i><i></i><i></i><i></i></span></span><b>SamFlow</b></div>
+        <div class="nit">
+          <svg class="ic" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3.75 6.7v4.6M7.25 4.9v8.2M10.75 3.5v11M14.25 5.8v6.4"/></svg>Overzicht</div>
+        <div class="nit">
+          <svg class="ic" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 5.2h12M3 9h9.2M3 12.8h6"/></svg>Historie</div>
+        <div class="nit">
+          <svg class="ic" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14 9 4l5 10M5.95 10.3h6.1"/></svg>Woordenlijst</div>
+        <div class="nit on">
+          <svg class="ic" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 3.5 3 9l3.5 5.5M11.5 3.5 15 9l-3.5 5.5"/></svg>Snippets<span class="nb">nieuw</span></div>
+        <div class="nit">
+          <svg class="ic" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 5h5.4M13.6 5H15M7.8 9H15M3 13h6.6"/><circle cx="11" cy="5" r="1.9"/><circle cx="5.2" cy="9" r="1.9"/><circle cx="12.2" cy="13" r="1.9"/></svg>Instellingen</div>
+        <div class="spacer"></div>
+        <div class="sfoot"><span class="st">Model warm · 0,5 s</span><span class="vv">1.2.0 · App-modus</span></div>
+      </div>
+
+      <!-- hoofd -->
+      <div class="main">
+        <div class="mainhead"><h3>Snippets</h3><button class="btn primary" onclick="sheet(true)">+ Nieuwe snippet</button></div>
+        <p class="mainsub">Zeg de trigger-frase tijdens een dictaat en SamFlow vervangt 'm door de expansie —
+          URL's, je adres, een handtekening of standaard-antwoorden. <b>Alles lokaal</b>, in <code>snippets</code> naast je woordenlijst.</p>
+
+        <!-- in actie -->
+        <div class="demo">
+          <h4>Zo werkt het</h4>
+          <div class="demoline"><span class="who">Je zegt</span>
+            <span class="txt say">"Bekijk gerust mijn werk op <span class="hlt">mijn linkedin</span> en mail me anders even."</span></div>
+          <div class="demoline"><span class="who">Geplakt</span>
+            <span class="txt">Bekijk gerust mijn werk op <span class="hl url">linkedin.com/in/samkloeth</span> en mail me anders even.</span></div>
+        </div>
+
+        <!-- snippet-lijst -->
+        <div class="group">
+          <div class="grouphead"><h4>Jouw snippets</h4><span class="cnt">6 stuks</span></div>
+
+          <div class="srow">
+            <span class="trig"><svg class="mic" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M9 2.5v0a2.4 2.4 0 0 1 2.4 2.4v3.6A2.4 2.4 0 0 1 9 10.9v0a2.4 2.4 0 0 1-2.4-2.4V4.9A2.4 2.4 0 0 1 9 2.5Z"/><path d="M4.5 8.2a4.5 4.5 0 0 0 9 0M9 13v2.5"/></svg>mijn linkedin</span>
+            <span class="arrow">→</span>
+            <span class="expo mono">https://www.linkedin.com/in/samkloeth</span>
+            <span class="ttag url">URL</span>
+            <span class="act"><button class="iconbtn"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 3.2 14.8 6.5 6.2 15H3v-3.2z"/></svg></button>
+              <button class="iconbtn"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 5h10M7 5V3.5h4V5M6 5v9.5h6V5"/></svg></button></span>
+          </div>
+
+          <div class="srow">
+            <span class="trig"><svg class="mic" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M9 2.5a2.4 2.4 0 0 1 2.4 2.4v3.6A2.4 2.4 0 0 1 9 10.9a2.4 2.4 0 0 1-2.4-2.4V4.9A2.4 2.4 0 0 1 9 2.5Z"/><path d="M4.5 8.2a4.5 4.5 0 0 0 9 0M9 13v2.5"/></svg>mijn mailadres</span>
+            <span class="arrow">→</span>
+            <span class="expo mono">kloethsam@gmail.com</span>
+            <span class="ttag url">E-mail</span>
+            <span class="act"><button class="iconbtn"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 3.2 14.8 6.5 6.2 15H3v-3.2z"/></svg></button>
+              <button class="iconbtn"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 5h10M7 5V3.5h4V5M6 5v9.5h6V5"/></svg></button></span>
+          </div>
+
+          <div class="srow">
+            <span class="trig"><svg class="mic" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M9 2.5a2.4 2.4 0 0 1 2.4 2.4v3.6A2.4 2.4 0 0 1 9 10.9a2.4 2.4 0 0 1-2.4-2.4V4.9A2.4 2.4 0 0 1 9 2.5Z"/><path d="M4.5 8.2a4.5 4.5 0 0 0 9 0M9 13v2.5"/></svg>mijn handtekening</span>
+            <span class="arrow">→</span>
+            <span class="expo"><b>Met vriendelijke groet,</b> Sam Kloeth · samkloeth.nl …</span>
+            <span class="ttag blk">Blok</span>
+            <span class="act"><button class="iconbtn"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 3.2 14.8 6.5 6.2 15H3v-3.2z"/></svg></button>
+              <button class="iconbtn"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 5h10M7 5V3.5h4V5M6 5v9.5h6V5"/></svg></button></span>
+          </div>
+
+          <div class="srow">
+            <span class="trig"><svg class="mic" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M9 2.5a2.4 2.4 0 0 1 2.4 2.4v3.6A2.4 2.4 0 0 1 9 10.9a2.4 2.4 0 0 1-2.4-2.4V4.9A2.4 2.4 0 0 1 9 2.5Z"/><path d="M4.5 8.2a4.5 4.5 0 0 0 9 0M9 13v2.5"/></svg>ons adres</span>
+            <span class="arrow">→</span>
+            <span class="expo">Voorbeeldstraat 12, 1234 AB Amsterdam</span>
+            <span class="ttag txt">Tekst</span>
+            <span class="act"><button class="iconbtn"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 3.2 14.8 6.5 6.2 15H3v-3.2z"/></svg></button>
+              <button class="iconbtn"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 5h10M7 5V3.5h4V5M6 5v9.5h6V5"/></svg></button></span>
+          </div>
+
+          <div class="srow">
+            <span class="trig"><svg class="mic" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M9 2.5a2.4 2.4 0 0 1 2.4 2.4v3.6A2.4 2.4 0 0 1 9 10.9a2.4 2.4 0 0 1-2.4-2.4V4.9A2.4 2.4 0 0 1 9 2.5Z"/><path d="M4.5 8.2a4.5 4.5 0 0 0 9 0M9 13v2.5"/></svg>onze bankgegevens</span>
+            <span class="arrow">→</span>
+            <span class="expo mono">IBAN NL12 ABCD 0123 4567 89 · t.n.v. S. Kloeth</span>
+            <span class="ttag txt">Tekst</span>
+            <span class="act"><button class="iconbtn"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 3.2 14.8 6.5 6.2 15H3v-3.2z"/></svg></button>
+              <button class="iconbtn"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 5h10M7 5V3.5h4V5M6 5v9.5h6V5"/></svg></button></span>
+          </div>
+
+          <div class="srow">
+            <span class="trig"><svg class="mic" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M9 2.5a2.4 2.4 0 0 1 2.4 2.4v3.6A2.4 2.4 0 0 1 9 10.9a2.4 2.4 0 0 1-2.4-2.4V4.9A2.4 2.4 0 0 1 9 2.5Z"/><path d="M4.5 8.2a4.5 4.5 0 0 0 9 0M9 13v2.5"/></svg>plan een belletje</span>
+            <span class="arrow">→</span>
+            <span class="expo">Zullen we even bellen? Prik gerust een moment in mijn agenda: <b>cal.com/sam</b></span>
+            <span class="ttag txt">Tekst</span>
+            <span class="act"><button class="iconbtn"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 3.2 14.8 6.5 6.2 15H3v-3.2z"/></svg></button>
+              <button class="iconbtn"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 5h10M7 5V3.5h4V5M6 5v9.5h6V5"/></svg></button></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- nieuwe-snippet sheet (Helder-stijl, geen systeem-blauw) -->
+    <div class="sheetback" id="sheetback" style="display:none">
+      <div class="sheet">
+        <div class="sh"><h5>Nieuwe snippet</h5><p>Kies een trigger die je normaal niet per ongeluk zegt.</p></div>
+        <div class="body">
+          <div class="field">
+            <label>Trigger <span class="hint">— wat je zegt</span></label>
+            <div class="inp trigline"><svg class="mic" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M9 2.5a2.4 2.4 0 0 1 2.4 2.4v3.6A2.4 2.4 0 0 1 9 10.9a2.4 2.4 0 0 1-2.4-2.4V4.9A2.4 2.4 0 0 1 9 2.5Z"/><path d="M4.5 8.2a4.5 4.5 0 0 0 9 0M9 13v2.5"/></svg>mijn portfolio</div>
+          </div>
+          <div class="field">
+            <label>Expansie <span class="hint">— wat er geplakt wordt (mag meerdere regels)</span></label>
+            <div class="inp area mono">https://samkloeth.nl/werk</div>
+          </div>
+          <div class="field" style="margin-bottom:6px">
+            <label>Voorbeeld</label>
+            <div class="prev">"… kijk gerust op <span class="hlt" style="background:color-mix(in srgb,var(--clay) 18%, transparent)">mijn portfolio</span> …" wordt<br>
+              "… kijk gerust op <b>https://samkloeth.nl/werk</b> …"</div>
+          </div>
+        </div>
+        <div class="sheetfoot">
+          <span class="fill"></span>
+          <button class="btn ghost" onclick="sheet(false)">Annuleer</button>
+          <button class="btn primary" onclick="sheet(false)">Bewaar snippet</button>
+        </div>
+      </div>
+    </div>
+  </div></div>
+
+  <!-- ontwerp-annotaties -->
+  <p class="cap"><b>Waar het op leunt.</b> Snippets zijn geen nieuw mechanisme — het is dezelfde vorm als
+    <code>mappings.txt</code> (gehoord → canoniek), maar dan voor <b>hele frases → lange expansies</b> in plaats van
+    losse woord-correcties. De vier ontwerpkeuzes die ertoe doen:</p>
+
+  <div class="rules">
+    <div class="rule"><h5><span class="n">1</span>Exacte frase, niets daarbuiten</h5>
+      <p>Een trigger matcht alleen als de <b>hele frase</b> genormaliseerd voorkomt (kleinletters, leestekens weg).
+        Precies de <code>lexicon</code>-belofte: <b>nooit een woord buiten de lijst aanraken</b>. Daarom kies je een
+        trigger die je normaal niet zegt ("mijn linkedin"), niet "de".</p></div>
+
+    <div class="rule"><h5><span class="n">2</span>Laatste laag in de pijplijn</h5>
+      <p>Snippets draaien ná <code>cleanup</code> én ná het oppoets-model, als <b>allerlaatste stap</b>. Zo kan geen
+        enkele laag een URL of handtekening nog verbouwen — wat je invulde wordt letterlijk geplakt.</p></div>
+
+    <div class="rule"><h5><span class="n">3</span>Lokaal &amp; persoonlijk</h5>
+      <p>Opslag naast <code>lexicon.txt</code>/<code>mappings.txt</code> — <b>buiten git</b>, alleen op deze Mac.
+        Per dictaat herlezen (mtime-cache), dus een nieuwe snippet werkt meteen zonder herstart.</p></div>
+
+    <div class="rule"><h5><span class="n">4</span>Vals-positief-vangrail</h5>
+      <p>Bij opslaan waarschuwt SamFlow als een trigger verdacht kort/algemeen is (bv. één gewoon woord), zodat
+        "even" nooit stiekem een blok tekst wordt. Je bevestigt of kiest een langere frase.</p></div>
+  </div>
+
+  <div class="altbox"><b>Plaatsing — twee opties.</b> Deze mockup toont snippets als een <b>eigen tab</b> in de zijbalk
+    (past bij "één ding per scherm"). Alternatief: een <b>kaart binnen Woordenlijst</b>, onder de termen en mappings —
+    dan blijft de zijbalk korter en staan alle "wat SamFlow met je woorden doet"-instellingen bij elkaar. Beide zijn
+    puur design; laat me weten welke jij logischer vindt.</div>
+
+  <p class="cap" style="margin-top:18px"><b>Reikwijdte.</b> Dit is een <span class="new">nieuwe feature</span>, geen polish —
+    het vraagt een <code>snippets</code>-module, een expansie-laag in <code>samflow.handle()</code>, en deze UI. Kleiner dan
+    de Engelse lokalisatie, groter dan een tegel op het dashboard. Nog niets gebouwd; eerst dit ontwerp.</p>
+</div>
+
+<script>
+  function tset(m){ document.documentElement.setAttribute('data-theme', m);
+    document.getElementById('tl').classList.toggle('on', m==='light');
+    document.getElementById('td').classList.toggle('on', m==='dark'); }
+  (function(){ var m = matchMedia('(prefers-color-scheme:dark)').matches ? 'dark':'light'; tset(m); })();
+  function sheet(on){ document.getElementById('sheetback').style.display = on ? 'flex' : 'none'; }
+</script>
+</body>
+</html>

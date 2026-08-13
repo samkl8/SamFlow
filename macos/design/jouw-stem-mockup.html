@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SamFlow — Jouw stem (mockup)</title>
+</head>
+<body>
+<style>
+  :root{
+    --sg:#f4f4f6; --ss:#ffffff; --sunken:#f7f6f8; --si:#1b1b20; --sm:#5c5c66; --sf:#9a9aa4;
+    --sl:rgba(20,18,30,.10); --slx:rgba(20,18,30,.16);
+    --clay:#c67b52; --green:#33b859; --graphite:#1e1e22;
+    --chip:#ebeaee;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{ --sg:#0e0e12; --ss:#17171c; --sunken:#121216; --si:#f1f1f4; --sm:#9a9aa4; --sf:#63636d;
+      --sl:rgba(255,255,255,.10); --slx:rgba(255,255,255,.17); --chip:#26262c; }
+  }
+  :root[data-theme="light"]{ --sg:#f4f4f6; --ss:#ffffff; --sunken:#f7f6f8; --si:#1b1b20; --sm:#5c5c66; --sf:#9a9aa4;
+    --sl:rgba(20,18,30,.10); --slx:rgba(20,18,30,.16); --chip:#ebeaee; }
+  :root[data-theme="dark"]{ --sg:#0e0e12; --ss:#17171c; --sunken:#121216; --si:#f1f1f4; --sm:#9a9aa4; --sf:#63636d;
+    --sl:rgba(255,255,255,.10); --slx:rgba(255,255,255,.17); --chip:#26262c; }
+
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--sg); color:var(--si); font-family:var(--sans); -webkit-font-smoothing:antialiased; line-height:1.55; }
+  .wrap{ max-width:760px; margin:0 auto; padding:44px 22px 90px; }
+  .lede{ text-align:center; margin:0 auto 6px; max-width:620px; }
+  .eyebrow{ font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--clay); font-weight:700; margin:0 0 12px; }
+  h1{ font-size:clamp(24px,4.5vw,33px); letter-spacing:-.02em; margin:0 0 12px; line-height:1.1; }
+  .lede p{ font-size:15px; color:var(--sm); margin:0; }
+  .lede b{ color:var(--si); font-weight:600; }
+  code{ font-family:var(--mono); font-size:.9em; background:var(--sl); padding:1px 5px; border-radius:5px; }
+
+  .themebar{ display:flex; justify-content:center; margin:20px 0 30px; }
+  .seg{ display:inline-flex; background:var(--sl); border-radius:999px; padding:3px; gap:2px; }
+  .seg button{ font:inherit; font-size:12.5px; font-weight:600; color:var(--sm); border:0; background:transparent; padding:5px 13px; border-radius:999px; cursor:pointer; transition:.15s; }
+  .seg button.on{ background:var(--ss); color:var(--si); box-shadow:0 1px 3px rgba(20,18,30,.14), 0 0 0 .5px var(--sl); }
+
+  h2.sec{ font-size:12px; letter-spacing:.09em; text-transform:uppercase; color:var(--sf); font-weight:700; margin:38px 0 12px 2px; }
+
+  /* ============ de kaart ============ */
+  .vcard{ background:var(--sunken); border-radius:12px; box-shadow:inset 0 0 0 .5px var(--sl); padding:15px 17px 16px; }
+  .vhead{ display:flex; align-items:baseline; gap:10px; margin-bottom:14px; }
+  .vhead h3{ font-size:14px; margin:0; letter-spacing:-.01em; }
+  .vhead .note{ font-size:11px; color:var(--sf); margin-left:auto; display:inline-flex; align-items:center; gap:6px; }
+  .vhead .note::before{ content:""; width:6px; height:6px; border-radius:50%; background:var(--green); }
+
+  .vfacts{ display:grid; grid-template-columns:1fr 1fr 1.2fr; gap:0; }
+  .fact{ padding:2px 14px; border-left:.5px solid var(--sl); }
+  .fact:first-child{ border-left:0; padding-left:0; }
+  .fact .num{ font-size:23px; font-weight:650; letter-spacing:-.02em; line-height:1.1; }
+  .fact .num .u{ font-size:12px; font-weight:500; color:var(--sf); margin-left:4px; letter-spacing:0; }
+  .fact .lbl{ font-size:11px; color:var(--sf); margin-top:3px; }
+  .fact .peak{ font-size:16px; font-weight:600; letter-spacing:-.01em; }
+  /* dagdeel-staafjes onder Piekmoment */
+  .dayparts{ display:flex; align-items:flex-end; gap:4px; height:22px; margin:5px 0 1px; }
+  .dayparts .dp{ flex:1 1 0; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%; }
+  .dayparts .dp i{ width:100%; max-width:12px; border-radius:2px 2px 0 0; background:var(--clay); opacity:.4; display:block; }
+  .dayparts .dp.hi i{ opacity:1; }
+  .dayparts .dp span{ font-size:8px; color:var(--sf); margin-top:2px; }
+
+  .vhr{ height:.5px; background:var(--sl); margin:15px 0 12px; }
+
+  .vwlbl{ font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--sf); font-weight:700; margin:0 0 8px; }
+  .vwlbl .when{ color:var(--sf); font-weight:400; letter-spacing:0; text-transform:none; margin-left:6px; }
+  .wordlist{ list-style:none; margin:0; padding:0; }
+  .wordlist li{ display:flex; align-items:center; gap:10px; font-size:12.5px; padding:4px 0; }
+  .wordlist .w{ color:var(--si); flex:0 0 92px; }
+  .wordlist .meter{ flex:1 1 auto; height:5px; border-radius:3px; background:var(--chip); overflow:hidden; }
+  .wordlist .meter i{ display:block; height:100%; background:var(--clay); opacity:.55; border-radius:3px; }
+  .wordlist .c{ font-size:11px; color:var(--sf); flex:0 0 auto; font-variant-numeric:tabular-nums; width:32px; text-align:right; }
+
+  /* historie-uit: rustige uitnodiging i.p.v. de woordenlijst */
+  .locked{ display:flex; align-items:center; gap:9px; font-size:12px; color:var(--sm); padding:2px 0 1px; }
+  .locked .ic{ width:15px; height:15px; color:var(--sf); flex:0 0 auto; }
+  .locked a{ color:var(--clay); text-decoration:none; font-weight:600; }
+
+  /* stijl-chip: één eerlijke, afgeleide typering (geen zin óver jou) */
+  .vstyle{ margin-top:13px; display:inline-flex; align-items:center; gap:7px; font-size:11.5px; color:var(--sm);
+    background:var(--chip); border-radius:999px; padding:4px 11px; box-shadow:0 0 0 .5px var(--sl); }
+  .vstyle b{ color:var(--si); font-weight:600; }
+  .vstyle .k{ color:var(--sf); text-transform:uppercase; font-size:9.5px; letter-spacing:.06em; font-weight:700; }
+
+  .cap{ font-size:12.5px; line-height:1.6; color:var(--sm); margin:16px 2px 0; max-width:80ch; }
+  .cap b{ color:var(--si); font-weight:600; }
+  .cap.small{ font-size:11.5px; color:var(--sf); }
+  .contrast{ display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:14px; }
+  .contrast .col h4{ font-size:11px; letter-spacing:.05em; text-transform:uppercase; color:var(--sf); font-weight:700; margin:0 0 7px 2px; }
+  @media (max-width:640px){ .contrast{ grid-template-columns:1fr; } .vfacts{ grid-template-columns:1fr; gap:10px; } .fact{ border-left:0; padding-left:0; } }
+</style>
+
+<div class="wrap">
+  <div class="lede">
+    <p class="eyebrow">SamFlow · Jouw stem</p>
+    <h1>Feitelijk, niet verzonnen</h1>
+    <p>Het idee van Wispr's "Your Voice", maar zónder de drie dingen die er slop van maken:
+       <b>geen model dat je karakter beschrijft</b>, geen "unlocks in 1.705 words", geen share-badge.
+       Gewoon een paar meetbare feiten uit je eigen data — jij trekt de conclusie. Eén rustige kaart
+       op het Overzicht, alles lokaal.</p>
+  </div>
+
+  <div class="themebar"><div class="seg">
+    <button onclick="tset('light')" id="tl">Licht</button>
+    <button onclick="tset('dark')" id="td">Donker</button>
+  </div></div>
+
+  <h2 class="sec">De kaart</h2>
+
+  <div class="contrast">
+    <!-- STAAT A: historie aan -->
+    <div class="col">
+      <h4>historie aan</h4>
+      <div class="vcard">
+        <div class="vhead"><h3>Jouw stem</h3><span class="note">alleen op deze Mac</span></div>
+        <div class="vfacts">
+          <div class="fact"><div class="num">178<span class="u">w/min</span></div><div class="lbl">spreektempo</div></div>
+          <div class="fact"><div class="num">34<span class="u">wrd</span></div><div class="lbl">gem. per dictaat</div></div>
+          <div class="fact">
+            <div class="dayparts">
+              <div class="dp"><i style="height:22%"></i><span>nacht</span></div>
+              <div class="dp hi"><i style="height:100%"></i><span>ocht</span></div>
+              <div class="dp"><i style="height:64%"></i><span>mid</span></div>
+              <div class="dp"><i style="height:38%"></i><span>avond</span></div>
+            </div>
+            <div class="lbl">piek — 's ochtends</div>
+          </div>
+        </div>
+        <div class="vhr"></div>
+        <p class="vwlbl">Meest gezegd <span class="when">· 30 dagen</span></p>
+        <ul class="wordlist">
+          <li><span class="w">even</span><span class="meter"><i style="width:100%"></i></span><span class="c">312</span></li>
+          <li><span class="w">flow</span><span class="meter"><i style="width:74%"></i></span><span class="c">231</span></li>
+          <li><span class="w">klant</span><span class="meter"><i style="width:61%"></i></span><span class="c">190</span></li>
+          <li><span class="w">morgen</span><span class="meter"><i style="width:47%"></i></span><span class="c">147</span></li>
+          <li><span class="w">MarketOS</span><span class="meter"><i style="width:38%"></i></span><span class="c">119</span></li>
+        </ul>
+        <span class="vstyle"><span class="k">stijl</span> <b>uitgebreid &amp; gestructureerd</b></span>
+      </div>
+    </div>
+
+    <!-- STAAT B: historie uit -->
+    <div class="col">
+      <h4>historie uit</h4>
+      <div class="vcard">
+        <div class="vhead"><h3>Jouw stem</h3><span class="note">alleen op deze Mac</span></div>
+        <div class="vfacts">
+          <div class="fact"><div class="num">178<span class="u">w/min</span></div><div class="lbl">spreektempo</div></div>
+          <div class="fact"><div class="num">34<span class="u">wrd</span></div><div class="lbl">gem. per dictaat</div></div>
+          <div class="fact">
+            <div class="dayparts">
+              <div class="dp"><i style="height:22%"></i><span>nacht</span></div>
+              <div class="dp hi"><i style="height:100%"></i><span>ocht</span></div>
+              <div class="dp"><i style="height:64%"></i><span>mid</span></div>
+              <div class="dp"><i style="height:38%"></i><span>avond</span></div>
+            </div>
+            <div class="lbl">piek — 's ochtends</div>
+          </div>
+        </div>
+        <div class="vhr"></div>
+        <div class="locked">
+          <svg class="ic" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="10" height="7" rx="1.6"/><path d="M6 8V6a3 3 0 0 1 6 0v2"/></svg>
+          <span>Zet <a href="#">historie</a> aan om je meest gebruikte woorden te zien.</span>
+        </div>
+        <span class="vstyle"><span class="k">stijl</span> <b>uitgebreid &amp; gestructureerd</b></span>
+      </div>
+    </div>
+  </div>
+
+  <p class="cap"><b>Waarom dit wél bij Helder past.</b> De drie feiten links (tempo, lengte, piek) zijn
+    <b>inhoudsloos</b> — het "piekmoment" zegt wannéér je dicteert, nooit wát. Tempo en lengte liggen al in
+    <code>stats.json</code>; het piekmoment vraagt alleen kleine uur-emmertjes erbij (geen tekst). <b>Meest
+    gezegd</b> is het enige dat tekst nodig heeft, dus dat tonen we <b>alleen als je historie al aan hebt</b>
+    (rechts: dan een rustige uitnodiging i.p.v. de lijst) — geen nieuwe opslag, geen extra privacy-vraag.</p>
+
+  <p class="cap small"><b>De stijl-chip</b> is geen zin óver jou. "Uitgebreid &amp; gestructureerd" is een
+    afgeleide typering uit meetbare signalen (gemiddelde lengte + hoeveel leestekens/alinea's) — een label,
+    geen vleierij. Vind je zelfs dát te veel richting persoonlijkheid, dan laten we 'm weg; de kaart staat
+    ook prima zonder.</p>
+</div>
+
+<script>
+  function tset(m){ document.documentElement.setAttribute('data-theme', m);
+    document.getElementById('tl').classList.toggle('on', m==='light');
+    document.getElementById('td').classList.toggle('on', m==='dark'); }
+  (function(){ tset(matchMedia('(prefers-color-scheme:dark)').matches ? 'dark':'light'); })();
+</script>
+</body>
+</html>
