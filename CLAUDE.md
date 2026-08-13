@@ -116,6 +116,12 @@ Dit is de onderhoudslus van het project. Hoor je een woord dat er verkeerd uitko
   (≥4 letters, vergeleken op de eerste vijf) de opgepoetste tekst haalt. Gemeten: 1,00 bij
   een echte polish (NL én EN), 0,07 bij een vertaling. Drempel 0,5. Sloop die check niet
   weg als je aan de prompt werkt — hij is de enige die betekenis-drift ziet.
+- **Het model kan middenin een zin op een ander schrift overgaan.** Echt gebeurd, twee
+  dictaten achter elkaar: `Oké, kun je me甚至 帮助 我 補正這件事？` — een woord-voor-woord
+  vertaling die halverwege begint (qwen2.5:3b is Chinees getraind). whisper-server was
+  onschuldig: dezelfde zin gaf daar in vier varianten keurig Nederlands. `_script_drift`
+  is de vangrail, en die is er náást `_kept_ratio` omdat bij een lang dictaat waarvan
+  alleen de staart omkiept het woordbehoud gewoon 1,00 blijft.
 - **Noem de taal expliciet in de prompt zodra we 'm weten.** "Schrijf je antwoord in het
   Duits" haalde 0,91 woordbehoud waar "in dezelfde taal als de invoer" op 0,18 bleef (de
   Nederlandse few-shot trekt hard). Alleen bij `"auto"` blijft de dezelfde-taal-regel over;

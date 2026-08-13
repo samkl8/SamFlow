@@ -142,6 +142,34 @@ def _leaks_fewshot(original: str, polished: str) -> bool:
 _CONTENT_WORD = re.compile(r"[^\W\d_]{4,}")
 _MIN_KEEP = 0.5    # zoveel van de inhoudswoorden hoort een polish te laten staan
 
+# Schrift-drift. Echt gebeurd met qwen2.5:3b, twee dictaten achter elkaar:
+#   "Oké, kun je me甚至 帮助 我 補正這件事？"
+# Dat is geen transcriptiefout maar een woord-voor-woord vertáling van het dictaat die
+# middenin de zin begint (甚至 = "even", 帮助 = "helpen", 補正這件事 = "dit fixen"). De
+# server leverde keurig Nederlands: vier varianten (met/zonder woordenlijst-prompt,
+# met/zonder taal) gaven allemaal de juiste zin -- het model erna kiepte om.
+# Waarom dit een eigen check heeft en niet aan `_kept_ratio` genoeg heeft: bij een lang
+# dictaat waarvan alleen de staart omschakelt blijft het woordbehoud ruim boven 0,5.
+# Grieks staat er bewust niet bij: een model dat "pi" als "π" schrijft is geen drift.
+_SCRIPTS = (
+    ("Chinees", 0x4E00, 0x9FFF), ("Chinees", 0x3400, 0x4DBF),
+    ("Japans", 0x3040, 0x30FF), ("Koreaans", 0xAC00, 0xD7AF),
+    ("Cyrillisch", 0x0400, 0x04FF), ("Arabisch", 0x0600, 0x06FF),
+    ("Hebreeuws", 0x0590, 0x05FF), ("Devanagari", 0x0900, 0x097F),
+    ("Thai", 0x0E00, 0x0E7F),
+)
+
+
+def _script_drift(original: str, polished: str) -> str:
+    """De naam van een schrift dat in de opgepoetste tekst opduikt terwijl het dictaat
+    het niet had. Leeg = niets aan de hand. Dicteer je zélf Chinees, dan staat het in
+    beide en keurt deze check niets af."""
+    for naam, lo, hi in _SCRIPTS:
+        if (any(lo <= ord(c) <= hi for c in polished)
+                and not any(lo <= ord(c) <= hi for c in original)):
+            return naam
+    return ""
+
 
 def _kept_ratio(original: str, polished: str) -> float:
     """Welk deel van de inhoudswoorden uit het dictaat haalt de opgepoetste tekst?
@@ -228,6 +256,11 @@ def polish(text: str) -> str:
         return text
     if _leaks_fewshot(text, polished):
         print("  ! oppoets lekte een voorbeeldzin; opgeschoonde tekst gebruikt")
+        return text
+    drift = _script_drift(text, polished)
+    if drift:
+        print(f"  ! oppoets schakelde midden in de tekst over op {drift}; "
+              f"opgeschoonde tekst gebruikt")
         return text
     keep = _kept_ratio(text, polished)
     if keep < _MIN_KEEP:
