@@ -132,14 +132,14 @@ def _short_version():
 
 
 _login_cache = [0.0, True]     # [monotone tijd, waarde] -- osascript is traag; kort cachen
+_login_busy = [False]          # één vraag tegelijk
 
 
-def _login_item_present():
-    # Gecachet (5s): dit draait osascript (~100 ms). Zonder cache zou een venster-resize,
-    # die de Instellingen-tab herbouwt, dit tientallen keren per seconde aanroepen.
-    now = time.monotonic()
-    if now - _login_cache[0] < 5.0:
-        return _login_cache[1]
+def _login_item_probe():
+    """De échte vraag aan System Events. Hoort **nooit** op de main thread: normaal ~100 ms,
+    maar draait System Events niet, dan lánceert deze tell 'm eerst en duurt het seconden.
+    De Instellingen-tab wordt op de main thread gebouwd -- bij elke klik erop én bij elke
+    reflow tijdens een resize -- dus daar was dit een bevroren app van een paar seconden."""
     try:
         out = subprocess.run(
             ["osascript", "-e",
@@ -148,9 +148,34 @@ def _login_item_present():
         val = "SamFlow" in (out.stdout or "")
     except Exception:
         val = True   # onbekend: install.sh zet 'm standaard, neem aan van wel
-    _login_cache[0] = now
+    _login_cache[0] = time.monotonic()
     _login_cache[1] = val
     return val
+
+
+def _login_item_present():
+    """Wat we nú weten, zonder te blokkeren. De eerste keer is dat een aanname (True,
+    zoals install.sh 'm zet); `_login_item_refresh` corrigeert dat binnen een tel."""
+    return _login_cache[1]
+
+
+def _login_item_refresh(done):
+    """Vraag het echt na op een werkthread en meld de uitkomst via `done(val)` -- die
+    callback draait dus óók op die thread. Slaat over als de waarde nog vers is (5s) of
+    als er al een vraag loopt: build_view() draait bij elke reflow opnieuw."""
+    if time.monotonic() - _login_cache[0] < 5.0 or _login_busy[0]:
+        return
+
+    def work():
+        try:
+            done(_login_item_probe())
+        except Exception:
+            pass
+        finally:
+            _login_busy[0] = False
+
+    _login_busy[0] = True
+    threading.Thread(target=work, daemon=True).start()
 
 
 def _login_item_set(on):
@@ -258,6 +283,8 @@ class PrefsController(NSObject):
         self._mode_cards = {}      # "basic"/"app" -> _ModeCard (live selectie)
         self._upd_info = None      # updater.check()-resultaat (achtergrond -> main thread)
         self._upd_link = None      # de "Controleer op updates"-knop
+        self._login_toggle = None  # "Start bij inloggen" (achtergrond -> main thread)
+        self._login_val = True
         return self
 
     # ---------- gegroepeerde rijen (mockup .group/.row) ----------
@@ -394,8 +421,25 @@ class PrefsController(NSObject):
             login.setTarget_(self)
             login.setAction_("toggleLogin:")
             c.addSubview_(login)
+            self._login_toggle = login
+            # De stand staat er meteen (uit de cache) en wordt gecorrigeerd zodra System
+            # Events geantwoord heeft -- op een werkthread, zie _login_item_refresh.
+            _login_item_refresh(self._login_probe_done)
             self._rowhead(c, top, rw, 46, "Start bij inloggen", None, 60)
         return (46, filler)
+
+    @objc.python_method
+    def _login_probe_done(self, val):
+        # draait op de werkthread: alleen de waarde neerzetten, tekenen doet de main thread
+        self._login_val = val
+        self.performSelectorOnMainThread_withObject_waitUntilDone_(
+            "loginProbeResult:", None, False)
+
+    def loginProbeResult_(self, _obj):
+        tog = self._login_toggle       # kan een nieuwe zijn na een reflow; altijd de laatste
+        if tog is not None:
+            tog.setState_(NSControlStateValueOn if self._login_val
+                          else NSControlStateValueOff)
 
     @objc.python_method
     def _fill_mode(self, c, top, rw):
@@ -643,7 +687,12 @@ class PrefsController(NSObject):
             settings.set("history_days", RETAIN_VALUES[i])
 
     def toggleLogin_(self, sender):
-        _login_item_set(sender.state() == NSControlStateValueOn)
+        # Wegschrijven gaat óók via System Events; zelfde reden als bij het uitlezen dus
+        # naar een werkthread. De cache krijgt meteen wat de gebruiker koos, zodat een
+        # reflow de schakelaar niet even terugzet naar de oude stand.
+        on = sender.state() == NSControlStateValueOn
+        _login_cache[0], _login_cache[1] = time.monotonic(), on
+        threading.Thread(target=_login_item_set, args=(on,), daemon=True).start()
 
     def editLexicon_(self, _sender):
         # Spring naar de Woordenlijst-tab van het hoofdvenster -- de echte in-app editor
