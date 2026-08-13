@@ -15,8 +15,8 @@ tools, but fully local, private, and teachable to your own vocabulary.
 - **Polished** — a floating pill that follows your cursor, pauses your music while you
   talk, and never degrades your Bluetooth audio quality.
 
-> Requires **macOS on Apple Silicon** (M1 or newer). Defaults to Dutch (`nl`); see
-> [Customising](#customising) to switch language.
+> Requires **macOS on Apple Silicon** (M1 or newer). Defaults to Dutch (`nl`); switch to
+> another language in Preferences — see [Customising](#customising).
 
 ---
 
@@ -38,15 +38,44 @@ what lands on your machine:
 The `.venv/` and the model file are git-ignored — they are downloaded locally, not
 committed.
 
+### What it costs while running
+
+Measured on an Apple Silicon Mac with `ps`, not estimated:
+
+| Process | Memory (resident) | When |
+|---|---|---|
+| `whisper-server` | **~120 MB** | always — this is the warm model service |
+| `samflow.py` | **~125 MB** | always — the Fn listener, pill and windows |
+| `ollama` + model | **~2.5 GB** | **only** with AI polishing on, and only while it is loaded |
+
+So the baseline is **roughly 250 MB of memory**. The 834 MB model file is *memory-mapped*
+rather than copied into the process, so macOS keeps as much of it in the (reclaimable) file
+cache as there is room for — that is why the warm service is fast without holding 834 MB of
+app memory hostage.
+
+AI polishing is **off by default**. Turn it on and Ollama loads a ~3B model, which is the
+2.5 GB above; it unloads itself again after five idle minutes. On a 16 GB Mac that is
+comfortable; on 8 GB, leave polishing off and you will not notice SamFlow at all.
+
+Disk: ~834 MB for the model plus ~63 MB for the Python environment.
+
+CPU while idle is under 1% — the app is a listener, not a poller.
+
 ---
 
 ## Install
 
+You need **macOS on Apple Silicon** (M1 or newer) and [Homebrew](https://brew.sh).
+`install.sh` handles everything else.
+
 ```bash
-git clone <this-repo> samflow
+git clone https://github.com/samkl8/SamFlow.git samflow
 cd samflow
 ./install.sh
 ```
+
+No `.dmg` yet: this installs from source, which is also why you can read every line of what
+runs on your machine. Expect the model download (~834 MB) to be the slow step.
 
 `install.sh` is safe to re-run; each step checks whether it is already done. It installs
 the dependencies above, downloads the model, builds `SamFlow.app`, and starts the warm
@@ -112,8 +141,18 @@ SamFlow learns *your* words through one file, `lexicon.txt` (personal, git-ignor
 Built-in defaults live in `lexicon.py` (`DEFAULT_TERMS`); rare non-personal phonetic misses
 live in `REPLACEMENTS` in `cleanup.py`.
 
-**Language:** set `LANGUAGE` in `samflow.py` (`"nl"`, `"en"`, …) and re-run `install.sh`
-so the warm service matches. Put terms in your language in `lexicon.txt`.
+**Interface language:** the windows follow your Mac — a Dutch system gets Dutch, everything
+else gets English. Override it in **Preferences → Appearance → "Interface language"**
+(`ui_language` in `settings.json`: `auto` / `nl` / `en`). Dutch is the source language and
+the translation table lives in `i18n.py`; run `python i18n.py` to see what is still missing.
+
+**Dictation language:** pick it in **Preferences → Dictation → "Taal"** (Dutch, English, German,
+French, Spanish, Italian, Portuguese, or *Automatisch* — Whisper detects per dictation).
+Stored as `language` in `settings.json`; it takes effect on the next dictation, no restart
+and no `install.sh` re-run. The setting travels through the whole pipeline: Whisper gets it
+as the decode language, `cleanup.py` picks that language's spoken commands and list markers
+(`LANGS`), and `polish.py` names the language in its prompt. Put terms in your language in
+`lexicon.txt`.
 
 **Dictation length:** one dictation may run up to **5 minutes** by default; anything past
 that is cut off. Change it in **Preferences → Dictation → "Maximale lengte"** (1 / 2 / 5 /

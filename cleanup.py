@@ -18,6 +18,7 @@ import re
 import unicodedata
 
 import lexicon
+import settings
 
 # ---------- config ----------
 ENABLE_COMMANDS = True     # spoken "nieuwe regel" becomes an actual newline
@@ -61,28 +62,121 @@ HALLUCINATIONS = [
 
 FILLERS = r"\b(?:u+h+m?|e+h+m?|a+h+m|hmm+|ehm)\b"
 
-COMMANDS = {
-    r"\bnieuwe? regel\b": "\n",
-    r"\bnieuwe? alinea\b": "\n\n",
-    r"\bnew ?line\b": "\n",
+
+# ---------- taal ----------
+# Fillers, hallucinaties, hoofdletters en het plakken van segmenten zijn taalneutraal en
+# gelden altijd. Wat wél aan een taal hangt, staat hieronder per taal: het woord waarmee
+# de woordenlijst aan Whisper wordt voorgesteld, de gesproken commando's, de opsomming-
+# markers, en de woorden die een taal legitiem verdubbelt.
+#
+# Een profiel vult alléén in wat we van die taal weten. Wat het openlaat -- en alles bij
+# "auto", waar we vooraf niet weten wat er komt -- valt terug op de vereniging van alle
+# profielen. Dat is bewust de conservatieve kant: een ruimere stotter-uitzonderingslijst
+# laat juist méér staan, en commando's en markers zijn letterlijke woorden die in een
+# andere taal simpelweg niet voorkomen. Een taal toevoegen aan de dropdown zonder profiel
+# is dus veilig -- je verliest alleen de commando's en opsommingen van die taal.
+LANGS = {
+    "nl": {
+        "prompt": "Woordenlijst",
+        # "het feit dat dat werkt" -- geen stotter maar Nederlands
+        "stutter_ok": {"dat", "die", "heel", "had"},
+        "commands": {r"\bnieuwe? regel\b": "\n", r"\bnieuwe? alinea\b": "\n\n"},
+        # "ten" matcht alleen mét ordinaal erachter, dus "ten opzichte" blijft ongemoeid
+        "list": r"ten\s+(?:eerste|tweede|derde|vierde|vijfde|zesde|zevende|achtste|"
+                r"negende|tiende)|punt\s+(?:een|één|twee|drie|vier|vijf|zes|zeven|acht|"
+                r"negen|tien|\d+)",
+    },
+    "en": {
+        "prompt": "Vocabulary",
+        # "the fact that that works", "he had had enough"
+        "stutter_ok": {"that", "had", "very"},
+        "commands": {r"\bnew ?line\b": "\n", r"\bnew paragraph\b": "\n\n"},
+        # bewust de bijwoorden: kaal "first"/"second" staat in elke gewone zin
+        "list": r"(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)ly"
+                r"|point\s+(?:one|two|three|four|five|six|seven|eight|nine|ten|\d+)",
+    },
+    "de": {
+        "prompt": "Wortliste",
+        "commands": {r"\bneue zeile\b": "\n", r"\bneuer absatz\b": "\n\n"},
+        "list": r"(?:erstens|zweitens|drittens|viertens|fünftens|sechstens|siebtens|"
+                r"achtens|neuntens|zehntens)",
+    },
+    "fr": {
+        "prompt": "Vocabulaire",
+        "commands": {r"\bnouvelle ligne\b": "\n", r"\bnouveau paragraphe\b": "\n\n"},
+        "list": r"(?:premièrement|deuxièmement|troisièmement|quatrièmement|cinquièmement)",
+    },
+    "es": {
+        "prompt": "Vocabulario",
+        "commands": {r"\bnueva línea\b": "\n", r"\bnuevo párrafo\b": "\n\n"},
+        "list": r"(?:primero|segundo|tercero|cuarto|quinto)\s*[,:]",
+    },
+    "it": {
+        "prompt": "Vocabolario",
+        "commands": {r"\bnuova riga\b": "\n", r"\bnuovo paragrafo\b": "\n\n"},
+    },
+    "pt": {
+        "prompt": "Vocabulário",
+        "commands": {r"\bnova linha\b": "\n", r"\bnovo parágrafo\b": "\n\n"},
+    },
 }
 
-# Dutch doubles these legitimately ("het feit dat dat werkt"), so leave them alone.
-STUTTER_ALLOW = {"dat", "die", "heel", "had"}
 
-# Gesproken opsommingen: expliciete ordinaal-markers. Alleen bij >=2 markers zetten we om
-# naar een genummerde lijst, zodat een losse "ten eerste" in een zin blijft staan. "ten"
-# matcht alleen mét een ordinaal erachter, dus "ten opzichte"/"ten einde" blijven ongemoeid.
-LIST_MARKER = re.compile(
-    r"\b(?:ten\s+(?:eerste|tweede|derde|vierde|vijfde|zesde|zevende|achtste|negende|tiende)"
-    r"|punt\s+(?:een|één|twee|drie|vier|vijf|zes|zeven|acht|negen|tien|\d+))\b",
-    re.IGNORECASE)
+def _union(field):
+    """Alles wat élk profiel voor dit veld meebrengt -- de terugval voor 'auto' en voor
+    een taal zonder (volledig) profiel."""
+    if field == "commands":
+        out = {}
+        for prof in LANGS.values():
+            out.update(prof.get("commands", {}))
+        return out
+    if field == "stutter_ok":
+        out = set()
+        for prof in LANGS.values():
+            out |= prof.get("stutter_ok", set())
+        return out
+    return [p["list"] for p in LANGS.values() if p.get("list")]
 
 
-def whisper_prompt() -> str:
+COMMANDS = _union("commands")            # de terugval; per taal smaller via LANGS
+STUTTER_ALLOW = _union("stutter_ok")
+_LIST_ALL = re.compile(r"\b(?:" + "|".join(_union("list")) + r")\b", re.IGNORECASE)
+_LIST_CACHE = {}
+
+
+def _lang(lang=None) -> str:
+    """De ingestelde dicteertaal. Wordt per dictaat opnieuw gelezen (settings heeft z'n
+    eigen mtime-cache), dus een wissel in het venster werkt meteen."""
+    if lang:
+        return lang
+    return settings.get("language") or "auto"
+
+
+def _rules(lang=None) -> tuple:
+    """(commando's, stotter-uitzonderingen, opsomming-regex) voor deze taal."""
+    prof = LANGS.get(_lang(lang), {})
+    marker = _LIST_ALL
+    if prof.get("list"):
+        key = prof["list"]
+        if key not in _LIST_CACHE:
+            _LIST_CACHE[key] = re.compile(r"\b(?:" + key + r")\b", re.IGNORECASE)
+        marker = _LIST_CACHE[key]
+    return (prof.get("commands", COMMANDS),
+            prof.get("stutter_ok", STUTTER_ALLOW),
+            marker)
+
+
+def whisper_prompt(lang=None) -> str:
     """The initial_prompt handed to Whisper. A plain comma list conditions fine.
-    Terms come from lexicon.py: built-in defaults plus your personal lexicon.txt."""
-    return "Woordenlijst: " + ", ".join(lexicon.terms()) + "."
+    Terms come from lexicon.py: built-in defaults plus your personal lexicon.txt.
+
+    Het label ervoor staat in de taal van het dictaat, want de initial prompt stuurt óók
+    de taalkeuze van de decoder: "Woordenlijst:" vóór een Engels dictaat duwt Whisper
+    richting Nederlands. Bij "auto" (en bij een taal zonder profiel) laten we het label
+    daarom helemaal weg -- de kale termenlijst stuurt de taal het minst."""
+    label = LANGS.get(_lang(lang), {}).get("prompt")
+    terms = ", ".join(lexicon.terms())
+    return f"{label}: {terms}." if label else f"{terms}."
 
 
 def _join_segments(text: str) -> str:
@@ -102,20 +196,22 @@ def _is_hallucination(text: str) -> bool:
     return any(re.search(p, t) for p in HALLUCINATIONS)
 
 
-def _collapse_stutter(text: str) -> str:
+def _collapse_stutter(text: str, allow=None) -> str:
+    allow = STUTTER_ALLOW if allow is None else allow
+
     def repl(m):
         word = m.group(1)
-        return m.group(0) if word.lower() in STUTTER_ALLOW else word
+        return m.group(0) if word.lower() in allow else word
     return re.sub(r"\b(\w+)(?:\s+\1\b)+", repl, text, flags=re.IGNORECASE)
 
 
-def _format_lists(text: str) -> str:
+def _format_lists(text: str, marker=None) -> str:
     """Gesproken opsommingen met >=2 ordinaal-markers ('ten eerste ... ten tweede ...',
     'punt een ... punt twee ...') worden een genummerde lijst. De nummering telt zelf
     door, dus een misgehoorde ordinaal maakt niet uit. Onder de twee markers raken we
     niets aan -- een losse 'ten eerste' hoort gewoon in de zin. De tekst vóór de eerste
     marker blijft als aanloop-regel boven de lijst staan."""
-    marks = list(LIST_MARKER.finditer(text))
+    marks = list((marker or _LIST_ALL).finditer(text))
     if len(marks) < 2:
         return text
     lead = text[:marks[0].start()].strip()
@@ -146,8 +242,10 @@ def _sentence_case(text: str) -> str:
                   lambda m: m.group(1) + m.group(2).upper(), text)
 
 
-def clean(text: str) -> str:
-    """Raw Whisper output in, text you can paste out. Empty string means: paste nothing."""
+def clean(text: str, lang=None) -> str:
+    """Raw Whisper output in, text you can paste out. Empty string means: paste nothing.
+    `lang` overschrijft de ingestelde dicteertaal (voor de zelftest hieronder)."""
+    commands, stutter_ok, marker = _rules(lang)
     text = _join_segments(unicodedata.normalize("NFC", text)).strip()
     if not text or _is_hallucination(text):
         return ""
@@ -161,14 +259,14 @@ def clean(text: str) -> str:
         text = re.sub(pattern, canonical, text, flags=re.IGNORECASE)
 
     if ENABLE_STUTTER:
-        text = _collapse_stutter(text)
+        text = _collapse_stutter(text, stutter_ok)
 
     if ENABLE_COMMANDS:
-        for pattern, literal in COMMANDS.items():
+        for pattern, literal in commands.items():
             text = re.sub(pattern, literal, text, flags=re.IGNORECASE)
 
     if ENABLE_LISTS:
-        text = _format_lists(text)
+        text = _format_lists(text, marker)
 
     # tidy the whitespace the substitutions left behind
     text = re.sub(r"[ \t]+", " ", text)
@@ -179,29 +277,42 @@ def clean(text: str) -> str:
     return _sentence_case(text) if text else ""
 
 
+# Elk voorbeeld dwingt een regel af. De taalcode hoort erbij sinds de regels per taal
+# verschillen -- juist de negatieve gevallen ("dit commando mag hier níét vuren") zijn
+# wat het profiel-systeem waard maakt.
 EXAMPLES = [
-    "ik push de git hub repo naar staging",                 # canonicalise: git hub -> GitHub
-    "de graph ql endpoint praat met de type script sdk",    # canonicalise: GraphQL, TypeScript, SDK
-    "dat draait als cronjob via launch d",                  # REPLACEMENTS: launch d -> launchd
-    "we hebben een centrale hub in het netwerk",            # GEEN valse treffer: 'hub' != GitHub
-    " uh dus ik wil dat de repo uh pusht naar naar staging",
-    "zet de teller op nul en push nieuwe regel dat was het",
-    "het feit dat dat werkt is mooi",
-    " Dit is een test van de git\nhub repo.\n",       # in-word break
-    " Eerste zin over de deploy.\n Ik ga naar huis.\n",  # segment boundary
-    "[BLANK_AUDIO]",
-    "Ondertiteld door de Amara.org gemeenschap",
-    "Www.Nil.Com.Br",
-    "ga naar example.com en check versie 3.5. daarna pushen",
-    "er zijn drie redenen ten eerste snelheid ten tweede prijs ten derde gemak",  # opsomming -> genummerd
-    "punt een koffie punt twee thee punt drie water",                             # opsomming via 'punt'
-    "ten eerste moeten we dit echt afmaken vandaag",                              # GEEN lijst: één marker blijft zin
+    ("nl", "ik push de git hub repo naar staging"),              # canonicalise: git hub -> GitHub
+    ("nl", "de graph ql endpoint praat met de type script sdk"),  # canonicalise: GraphQL, TypeScript, SDK
+    ("nl", "dat draait als cronjob via launch d"),               # REPLACEMENTS: launch d -> launchd
+    ("nl", "we hebben een centrale hub in het netwerk"),         # GEEN valse treffer: 'hub' != GitHub
+    ("nl", " uh dus ik wil dat de repo uh pusht naar naar staging"),
+    ("nl", "zet de teller op nul en push nieuwe regel dat was het"),
+    ("nl", "het feit dat dat werkt is mooi"),
+    ("nl", " Dit is een test van de git\nhub repo.\n"),          # in-word break
+    ("nl", " Eerste zin over de deploy.\n Ik ga naar huis.\n"),  # segment boundary
+    ("nl", "[BLANK_AUDIO]"),
+    ("nl", "Ondertiteld door de Amara.org gemeenschap"),
+    ("nl", "Www.Nil.Com.Br"),
+    ("nl", "ga naar example.com en check versie 3.5. daarna pushen"),
+    ("nl", "er zijn drie redenen ten eerste snelheid ten tweede prijs ten derde gemak"),  # opsomming -> genummerd
+    ("nl", "punt een koffie punt twee thee punt drie water"),                             # opsomming via 'punt'
+    ("nl", "ten eerste moeten we dit echt afmaken vandaag"),                              # GEEN lijst: één marker blijft zin
+    # --- meertalig ---
+    ("en", "we ship on friday new line that is the plan"),       # commando in de ingestelde taal
+    ("en", "there are three reasons firstly speed secondly price thirdly ease"),  # opsomming
+    ("en", "the fact that that works is nice"),                  # GEEN stotter: Engels verdubbelt dit
+    ("en", "we gaan nieuwe regel maken"),                        # GEEN Nederlands commando in een Engels dictaat
+    ("en", "the first thing we do is deploy"),                   # GEEN lijst: 'first' zonder -ly is gewone tekst
+    ("de", "wir starten montag neue zeile das ist der plan"),    # commando in het Duits
+    ("auto", "zet de teller op nul en push nieuwe regel dat was het"),  # auto kent álle commando's
 ]
 
 
 if __name__ == "__main__":
-    print(f"whisper prompt ({len(whisper_prompt())} chars):\n  {whisper_prompt()}\n")
-    for raw in EXAMPLES:
-        result = clean(raw)
-        print(f"  in : {raw!r}")
-        print(f"  out: {result!r}\n" if result else "  out: <weggegooid>\n")
+    for code in ("nl", "en", "auto"):
+        p = whisper_prompt(code)
+        print(f"whisper prompt [{code}] ({len(p)} chars):\n  {p}\n")
+    for lang, raw in EXAMPLES:
+        result = clean(raw, lang)
+        print(f"  [{lang}] in : {raw!r}")
+        print(f"       out: {result!r}\n" if result else "       out: <weggegooid>\n")

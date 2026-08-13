@@ -42,6 +42,7 @@ import settings
 import theme
 import ui
 import updater
+from i18n import t as _t
 # Gedeelde layout-bouwstenen wonen nu in ui.py (zie die module) zodat het
 # hoofdvenster ze deelt; hier onder de vertrouwde privé-namen.
 from ui import W, PAD, ROW_H, SEC_GAP
@@ -57,8 +58,18 @@ APP_PATH = os.path.expanduser("~/Applications/SamFlow.app")
 _PRIVACY_PANE = "x-apple.systempreferences:com.apple.preference.security?Privacy_"
 _KEYBOARD_PANE = "x-apple.systempreferences:com.apple.preference.keyboard"
 
-LANG_LABELS = ["Nederlands", "English", "Automatisch"]
-LANG_CODES = ["nl", "en", "auto"]
+# De talen die je kunt dicteren. Whisper kent er veel meer; deze lijst is de kruising met
+# wat cleanup.LANGS aan regels heeft (commando's, opsommingen, het label in de Whisper-
+# prompt). Een taal toevoegen = een regel hier én een profiel in cleanup.py -- zonder
+# profiel werkt dicteren wél, maar valt die taal terug op de gedeelde regels.
+LANG_LABELS = ["Nederlands", "English", "Deutsch", "Français", "Español", "Italiano",
+               "Português", "Automatisch"]
+LANG_CODES = ["nl", "en", "de", "fr", "es", "it", "pt", "auto"]
+
+# De taal van de vensters zelf (los van wat je dicteert). "Automatisch" volgt de Mac:
+# een Nederlandse Mac krijgt Nederlands, al het andere Engels -- zie i18n.py.
+UI_LANG_LABELS = ["Automatisch", "Nederlands", "English"]
+UI_LANG_CODES = ["auto", "nl", "en"]
 
 LOCK_LABELS = ["Uit", "Tik", "Dubbel-tik", "Fn+⌘"]
 LOCK_CODES = ["off", "tap", "double", "chord"]
@@ -132,14 +143,14 @@ def _short_version():
 
 
 _login_cache = [0.0, True]     # [monotone tijd, waarde] -- osascript is traag; kort cachen
+_login_busy = [False]          # één vraag tegelijk
 
 
-def _login_item_present():
-    # Gecachet (5s): dit draait osascript (~100 ms). Zonder cache zou een venster-resize,
-    # die de Instellingen-tab herbouwt, dit tientallen keren per seconde aanroepen.
-    now = time.monotonic()
-    if now - _login_cache[0] < 5.0:
-        return _login_cache[1]
+def _login_item_probe():
+    """De échte vraag aan System Events. Hoort **nooit** op de main thread: normaal ~100 ms,
+    maar draait System Events niet, dan lánceert deze tell 'm eerst en duurt het seconden.
+    De Instellingen-tab wordt op de main thread gebouwd -- bij elke klik erop én bij elke
+    reflow tijdens een resize -- dus daar was dit een bevroren app van een paar seconden."""
     try:
         out = subprocess.run(
             ["osascript", "-e",
@@ -148,9 +159,34 @@ def _login_item_present():
         val = "SamFlow" in (out.stdout or "")
     except Exception:
         val = True   # onbekend: install.sh zet 'm standaard, neem aan van wel
-    _login_cache[0] = now
+    _login_cache[0] = time.monotonic()
     _login_cache[1] = val
     return val
+
+
+def _login_item_present():
+    """Wat we nú weten, zonder te blokkeren. De eerste keer is dat een aanname (True,
+    zoals install.sh 'm zet); `_login_item_refresh` corrigeert dat binnen een tel."""
+    return _login_cache[1]
+
+
+def _login_item_refresh(done):
+    """Vraag het echt na op een werkthread en meld de uitkomst via `done(val)` -- die
+    callback draait dus óók op die thread. Slaat over als de waarde nog vers is (5s) of
+    als er al een vraag loopt: build_view() draait bij elke reflow opnieuw."""
+    if time.monotonic() - _login_cache[0] < 5.0 or _login_busy[0]:
+        return
+
+    def work():
+        try:
+            done(_login_item_probe())
+        except Exception:
+            pass
+        finally:
+            _login_busy[0] = False
+
+    _login_busy[0] = True
+    threading.Thread(target=work, daemon=True).start()
 
 
 def _login_item_set(on):
@@ -190,7 +226,7 @@ class _ModeCard(NSView):
         t = _label(title, 14, "bold")
         t.setFrame_(NSMakeRect(13, 12, frame.size.width - 44, 18))
         self.addSubview_(t)
-        d = NSTextField.wrappingLabelWithString_(desc)
+        d = NSTextField.wrappingLabelWithString_(_t(desc))
         d.setFont_(NSFont.systemFontOfSize_(11.5))
         d.setTextColor_(theme.TEXT2)
         d.setFrame_(NSMakeRect(13, 34, frame.size.width - 26, 36))
@@ -258,6 +294,8 @@ class PrefsController(NSObject):
         self._mode_cards = {}      # "basic"/"app" -> _ModeCard (live selectie)
         self._upd_info = None      # updater.check()-resultaat (achtergrond -> main thread)
         self._upd_link = None      # de "Controleer op updates"-knop
+        self._login_toggle = None  # "Start bij inloggen" (achtergrond -> main thread)
+        self._login_val = True
         return self
 
     # ---------- gegroepeerde rijen (mockup .group/.row) ----------
@@ -375,7 +413,7 @@ class PrefsController(NSObject):
         h = 52 if sub else 46
 
         def filler(c, top, rw):
-            btn = NSButton.buttonWithTitle_target_action_(btn_title, self, action)
+            btn = NSButton.buttonWithTitle_target_action_(_t(btn_title), self, action)
             btn.setBezelStyle_(1)
             btn.sizeToFit()
             bw = max(btn.frame().size.width, 90)
@@ -394,8 +432,25 @@ class PrefsController(NSObject):
             login.setTarget_(self)
             login.setAction_("toggleLogin:")
             c.addSubview_(login)
+            self._login_toggle = login
+            # De stand staat er meteen (uit de cache) en wordt gecorrigeerd zodra System
+            # Events geantwoord heeft -- op een werkthread, zie _login_item_refresh.
+            _login_item_refresh(self._login_probe_done)
             self._rowhead(c, top, rw, 46, "Start bij inloggen", None, 60)
         return (46, filler)
+
+    @objc.python_method
+    def _login_probe_done(self, val):
+        # draait op de werkthread: alleen de waarde neerzetten, tekenen doet de main thread
+        self._login_val = val
+        self.performSelectorOnMainThread_withObject_waitUntilDone_(
+            "loginProbeResult:", None, False)
+
+    def loginProbeResult_(self, _obj):
+        tog = self._login_toggle       # kan een nieuwe zijn na een reflow; altijd de laatste
+        if tog is not None:
+            tog.setState_(NSControlStateValueOn if self._login_val
+                          else NSControlStateValueOff)
 
     @objc.python_method
     def _fill_mode(self, c, top, rw):
@@ -414,8 +469,8 @@ class PrefsController(NSObject):
         c.addSubview_(basic)
         c.addSubview_(app)
         note = NSTextField.wrappingLabelWithString_(
-            "Kies je Basic, dan sluit dit venster en verdwijnt het dock-icoon. "
-            "Terugkomen kan altijd via “Open SamFlow…” in het menubalk-paneel.")
+            _t("Kies je Basic, dan sluit dit venster en verdwijnt het dock-icoon. "
+            "Terugkomen kan altijd via “Open SamFlow…” in het menubalk-paneel."))
         note.setFont_(NSFont.systemFontOfSize_(11.5))
         note.setTextColor_(theme.TEXT2)
         note.setFrame_(NSMakeRect(14, top + 102, rw - 28, 40))
@@ -443,13 +498,18 @@ class PrefsController(NSObject):
 
         # Weergave: de Basic/App-keuze als twee mini-kaarten + login
         y = _glabel(v, PAD, y, iw, "Weergave")
-        y = self._group(v, y, [(150, self._fill_mode), self._grp_login()])
+        y = self._group(v, y, [
+            (150, self._fill_mode),
+            self._grp_drop("Interfacetaal", "De taal van dit venster; “Automatisch” volgt je Mac",
+                           UI_LANG_LABELS, UI_LANG_CODES, "ui_language",
+                           "changeUiLanguage:"),
+            self._grp_login()])
         y += SEC_GAP
 
         y = _glabel(v, PAD, y, iw, "Dicteren")
         y = self._group(v, y, [
-            self._grp_seg("Taal", None, LANG_LABELS, LANG_CODES, "language",
-                          "changeLanguage:"),
+            self._grp_drop("Taal", "Wat je spreekt — “Automatisch” laat Whisper kiezen",
+                           LANG_LABELS, LANG_CODES, "language", "changeLanguage:"),
             self._grp_static("Model", "Binnenkort instelbaar", "Turbo — snel"),
             self._grp_keycap("Sneltoets", "Ingedrukt houden = opnemen", "fn"),
             self._grp_drop("Vastzetten", "Zodat je Fn niet hoeft vast te houden",
@@ -497,12 +557,12 @@ class PrefsController(NSObject):
         # voet: versie + "Controleer op updates" (mockup .winfoot)
         v.addSubview_(ui.hline(PAD, y, iw))
         y += 12
-        fl = _label(f"SamFlow {_short_version()} · lokaal & open source", 12,
+        fl = _label(f"SamFlow {_short_version()}" + _t(" · lokaal & open source"), 12,
                     color=theme.FAINT)
         fl.setFrame_(NSMakeRect(PAD, y, iw - 160, 16))
         v.addSubview_(fl)
         upd = NSButton.buttonWithTitle_target_action_(
-            "Controleer op updates", self, "checkUpdates:")
+            _t("Controleer op updates"), self, "checkUpdates:")
         upd.setBordered_(False)
         upd.setFont_(NSFont.systemFontOfSize_(12))
         upd.setContentTintColor_(_CLAY)
@@ -541,14 +601,14 @@ class PrefsController(NSObject):
             return
         model = settings.get("polish_model")
         alert = NSAlert.alloc().init()
-        alert.setMessageText_("Oppoets-model niet gevonden")
+        alert.setMessageText_(_t("Oppoets-model niet gevonden"))
         alert.setInformativeText_(
-            f"AI-oppoetsen staat aan, maar Ollama of het model “{model}” draait niet. "
-            "Zonder dat blijft je tekst onopgepoetst — de opschoon-regels doen wél gewoon "
-            "hun werk.\n\n"
-            f"Installeer Ollama en draai in Terminal:\n    ollama pull {model}")
-        alert.addButtonWithTitle_("Oké")
-        alert.addButtonWithTitle_("Ollama installeren…")
+            _t("AI-oppoetsen staat aan, maar Ollama of het model “") + model
+            + _t("” draait niet. Zonder dat blijft je tekst onopgepoetst — de opschoon-"
+                 "regels doen wél gewoon hun werk.\n\nInstalleer Ollama en draai in "
+                 "Terminal:\n    ollama pull ") + model)
+        alert.addButtonWithTitle_(_t("Oké"))
+        alert.addButtonWithTitle_(_t("Ollama installeren…"))
         if alert.runModal() == 1001:               # NSAlertSecondButtonReturn
             subprocess.Popen(["open", "https://ollama.com/download"])
 
@@ -556,6 +616,21 @@ class PrefsController(NSObject):
         i = sender.selectedSegment()
         if 0 <= i < len(LANG_CODES):
             settings.set("language", LANG_CODES[i])
+
+    def changeUiLanguage_(self, sender):
+        i = sender.selectedSegment()
+        if not (0 <= i < len(UI_LANG_CODES)):
+            return
+        settings.set("ui_language", UI_LANG_CODES[i])
+        # Wat al getekend is staat nog in de oude taal. Het hoofdvenster kan zichzelf
+        # opnieuw opbouwen; het losse Voorkeuren-venster niet, dus daar blijft de rest
+        # staan tot je 'm heropent. Lui importeren: mainwindow importeert prefs.
+        try:
+            import mainwindow
+            if mainwindow._win is not None:
+                mainwindow._win.show_tab(max(mainwindow._win._current, 0))
+        except Exception:
+            pass
 
     def changeLockMode_(self, sender):
         i = sender.selectedSegment()
@@ -595,7 +670,7 @@ class PrefsController(NSObject):
         # Achtergrond-check (netwerk-fetch mag de main thread niet blokkeren); het
         # resultaat komt via _updateResult_ terug op de main thread.
         sender.setEnabled_(False)
-        sender.setTitle_("Controleren…")
+        sender.setTitle_(_t("Controleren…"))
 
         def work():
             try:
@@ -611,11 +686,12 @@ class PrefsController(NSObject):
         alert = NSAlert.alloc().init()
         if info and info.get("can_apply"):
             n = info.get("behind", 0)
-            alert.setMessageText_("Update beschikbaar")
+            alert.setMessageText_(_t("Update beschikbaar"))
             alert.setInformativeText_(
-                f"{n} nieuwe versie{'s' if n != 1 else ''} klaar. Nu bijwerken en herstarten?")
-            alert.addButtonWithTitle_("Bijwerken")
-            alert.addButtonWithTitle_("Later")
+                f"{n}" + _t(" nieuwe versie") + ("s" if n != 1 else "")
+                + _t(" klaar. Nu bijwerken en herstarten?"))
+            alert.addButtonWithTitle_(_t("Bijwerken"))
+            alert.addButtonWithTitle_(_t("Later"))
             if alert.runModal() == 1000:            # NSAlertFirstButtonReturn
                 ok, _msg = updater.apply(info)
                 if ok:
@@ -623,19 +699,19 @@ class PrefsController(NSObject):
                     NSApplication.sharedApplication().terminate_(None)
                     return
         elif info and info.get("behind", 0) > 0:
-            alert.setMessageText_("Update beschikbaar")
+            alert.setMessageText_(_t("Update beschikbaar"))
             alert.setInformativeText_(
-                "Er staan nieuwe versies klaar, maar ze kunnen niet automatisch "
-                "geïnstalleerd worden (lokale wijzigingen of een afwijkende branch).")
-            alert.addButtonWithTitle_("Oké")
+                _t("Er staan nieuwe versies klaar, maar ze kunnen niet automatisch "
+                   "geïnstalleerd worden (lokale wijzigingen of een afwijkende branch)."))
+            alert.addButtonWithTitle_(_t("Oké"))
             alert.runModal()
         else:
-            alert.setMessageText_("Je gebruikt de nieuwste versie.")
-            alert.addButtonWithTitle_("Oké")
+            alert.setMessageText_(_t("Je gebruikt de nieuwste versie."))
+            alert.addButtonWithTitle_(_t("Oké"))
             alert.runModal()
         if self._upd_link is not None:
             self._upd_link.setEnabled_(True)
-            self._upd_link.setTitle_("Controleer op updates")
+            self._upd_link.setTitle_(_t("Controleer op updates"))
 
     def changeRetention_(self, sender):
         i = sender.selectedSegment()
@@ -643,7 +719,12 @@ class PrefsController(NSObject):
             settings.set("history_days", RETAIN_VALUES[i])
 
     def toggleLogin_(self, sender):
-        _login_item_set(sender.state() == NSControlStateValueOn)
+        # Wegschrijven gaat óók via System Events; zelfde reden als bij het uitlezen dus
+        # naar een werkthread. De cache krijgt meteen wat de gebruiker koos, zodat een
+        # reflow de schakelaar niet even terugzet naar de oude stand.
+        on = sender.state() == NSControlStateValueOn
+        _login_cache[0], _login_cache[1] = time.monotonic(), on
+        threading.Thread(target=_login_item_set, args=(on,), daemon=True).start()
 
     def editLexicon_(self, _sender):
         # Spring naar de Woordenlijst-tab van het hoofdvenster -- de echte in-app editor
@@ -669,7 +750,7 @@ class PreferencesWindow(NSObject):
             NSMakeRect(0, 0, W, h),
             NSWindowStyleMaskTitled | NSWindowStyleMaskClosable,
             NSBackingStoreBuffered, False)
-        win.setTitle_("Voorkeuren")
+        win.setTitle_(_t("Voorkeuren"))
         win.setContentView_(v)
         win.center()
         win.setReleasedWhenClosed_(False)
@@ -753,7 +834,7 @@ class WelcomeWindow(NSObject):
             sub = _label(why, size=11, color=NSColor.secondaryLabelColor())
             sub.setFrame_(NSMakeRect(PAD + 30, y + 24, W - 2 * PAD - 140, 15))
             v.addSubview_(sub)
-            btn = NSButton.buttonWithTitle_target_action_("Openen…", self, "openPane:")
+            btn = NSButton.buttonWithTitle_target_action_(_t("Openen…"), self, "openPane:")
             btn.setTag_(len(self._dots) - 1)
             btn.sizeToFit()
             bw = max(btn.frame().size.width, 84)
@@ -773,7 +854,7 @@ class WelcomeWindow(NSObject):
         self._fn_lbl.setFrame_(NSMakeRect(PAD + 30, y, W - 2 * PAD - 30 - 116, 38))
         self._fn_lbl.setLineBreakMode_(0)
         v.addSubview_(self._fn_lbl)
-        kb = NSButton.buttonWithTitle_target_action_("Toetsenbord", self, "openKeyboard:")
+        kb = NSButton.buttonWithTitle_target_action_(_t("Toetsenbord"), self, "openKeyboard:")
         kb.sizeToFit()
         kbw = max(kb.frame().size.width, 100)
         kb.setFrame_(NSMakeRect(W - PAD - kbw, y + 4, kbw, 24))
@@ -808,12 +889,12 @@ class WelcomeWindow(NSObject):
 
         _separator(v, y)
         y += 12
-        ask = NSButton.buttonWithTitle_target_action_("Vraag de rechten aan", self, "requestAll:")
+        ask = NSButton.buttonWithTitle_target_action_(_t("Vraag de rechten aan"), self, "requestAll:")
         ask.sizeToFit()
         ask.setFrame_(NSMakeRect(PAD, y, max(ask.frame().size.width, 150), 30))
         v.addSubview_(ask)
         self._begin = NSButton.buttonWithTitle_target_action_(
-            "Begin met dicteren", self, "begin:")
+            _t("Begin met dicteren"), self, "begin:")
         self._begin.sizeToFit()
         beginw = max(self._begin.frame().size.width, 150)
         self._begin.setFrame_(NSMakeRect(W - PAD - beginw, y, beginw, 30))
@@ -829,7 +910,7 @@ class WelcomeWindow(NSObject):
             NSMakeRect(0, 0, W, y),
             NSWindowStyleMaskTitled | NSWindowStyleMaskClosable,
             NSBackingStoreBuffered, False)
-        win.setTitle_("Welkom")
+        win.setTitle_(_t("Welkom"))
         win.setContentView_(v)
         win.center()
         win.setReleasedWhenClosed_(False)
@@ -854,9 +935,9 @@ class WelcomeWindow(NSObject):
             self._fn_dot.setStringValue_("✓" if free else "⚠")
             self._fn_dot.setTextColor_(NSColor.systemGreenColor() if free else _CLAY)
             self._fn_lbl.setStringValue_(
-                "Fn-toets is vrij — klaar voor SamFlow." if free else
-                "Fn opent nu iets van macOS (emoji-kiezer). Zet Toetsenbord → "
-                "“Druk op fn” op “Niets doen”.")
+                _t("Fn-toets is vrij — klaar voor SamFlow.") if free else
+                _t("Fn opent nu iets van macOS (emoji-kiezer). Zet Toetsenbord → "
+                   "“Druk op fn” op “Niets doen”."))
             self._fn_lbl.setTextColor_(
                 NSColor.secondaryLabelColor() if free else _CLAY)
 

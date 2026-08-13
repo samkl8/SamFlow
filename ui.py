@@ -30,7 +30,10 @@ from AppKit import (
     NSView,
 )
 
+import i18n
 import theme
+from i18n import t as _t     # niet als kale `t` importeren: Segmented/Dropdown gebruiken
+                             # `t` al als lusvariabele over hun labels
 
 ON = (0.20, 0.72, 0.35)               # #33B859 -- "aan"-kleur (zelfde groen als de "klaar"-stip)
 
@@ -140,7 +143,10 @@ def fill(frame, color, radius=0):
 
 
 def label(text, size=13, weight="regular", color=None):
-    f = NSTextField.labelWithString_(text)
+    # Dit is de trechter waar vrijwel alle zichtbare tekst doorheen gaat, dus hier staat
+    # de vertaling (zie i18n.py). Staat de tekst niet in de tabel -- of is 'ie dynamisch,
+    # zoals een dictaat of een term -- dan komt 'ie onveranderd terug.
+    f = NSTextField.labelWithString_(_t(text))
     font = (NSFont.systemFontOfSize_(size) if weight == "regular"
             else NSFont.boldSystemFontOfSize_(size) if weight == "bold"
             else NSFont.systemFontOfSize_weight_(size, 0.3))
@@ -150,7 +156,7 @@ def label(text, size=13, weight="regular", color=None):
 
 
 def section(view, y, title):
-    lbl = label(title.upper(), size=11, color=theme.FAINT)
+    lbl = label(_t(title).upper(), size=11, color=theme.FAINT)   # vertalen vóór .upper()
     lbl.setFrame_(NSMakeRect(PAD + 2, y, W - 2 * PAD, 16))
     view.addSubview_(lbl)
     return y + 22
@@ -178,7 +184,7 @@ def mono(text, size=12, weight="regular", color=None):
     """Een label in het monospaced systeemlettertype -- voor termen, tijden en
     fonetische bronwoorden (mockup: .term/.tm/.src). Valt terug op het gewone
     systeemfont als de monospaced-API ontbreekt."""
-    f = NSTextField.labelWithString_(text)
+    f = NSTextField.labelWithString_(_t(text))
     try:
         wt = 0.3 if weight in ("medium", "bold") else 0.0
         font = NSFont.monospacedSystemFontOfSize_weight_(size, wt)
@@ -197,12 +203,12 @@ def glabel(view, x, y, w, title, sub=None):
     s = NSMutableAttributedString.alloc().init()
     tfont = NSFont.systemFontOfSize_weight_(10.5, 0.3)
     s.appendAttributedString_(NSAttributedString.alloc().initWithString_attributes_(
-        title.upper(), {NSFontAttributeName: tfont,
-                        NSForegroundColorAttributeName: theme.FAINT,
-                        NSKernAttributeName: 0.7}))
+        _t(title).upper(), {NSFontAttributeName: tfont,
+                           NSForegroundColorAttributeName: theme.FAINT,
+                           NSKernAttributeName: 0.7}))
     if sub:
         s.appendAttributedString_(NSAttributedString.alloc().initWithString_attributes_(
-            "   " + sub, {NSFontAttributeName: NSFont.systemFontOfSize_(10.5),
+            "   " + _t(sub), {NSFontAttributeName: NSFont.systemFontOfSize_(10.5),
                           NSForegroundColorAttributeName: theme.FAINT}))
     lbl.setAttributedStringValue_(s)
     lbl.setFrame_(NSMakeRect(x, y, w, 15))
@@ -235,13 +241,16 @@ def card_group(view, x, y, w, row_heights, filler, radius=12):
     return y + total
 
 
-def flash_copied(button, revert_title="Kopieer"):
+def flash_copied(button, revert_title=None):
     """Korte kopieer-bevestiging op een borderless NSButton: de titel wordt heel
     even '✓ Gekopieerd' in groen, faded in, en keert na ~1,3 s terug. Zo weet je dat
     de klik aankwam (de knop deed anders zichtbaar niets). Gedeeld door de historie-
     lijst (mainwindow) en het menubalk-paneel (via hud). Main thread only."""
+    # De titel om naar terug te keren wordt hier opgehaald, niet als default-argument:
+    # dat zou de taal op import-moment vastzetten.
+    revert_title = _t("Kopieer") if revert_title is None else revert_title
     green = NSColor.colorWithCalibratedRed_green_blue_alpha_(*ON, 1.0)
-    button.setTitle_("✓ Gekopieerd")
+    button.setTitle_(_t("✓ Gekopieerd"))
     try:
         button.setContentTintColor_(green)
     except Exception:
@@ -274,6 +283,7 @@ class Segmented(NSView):
     change*-handlers in prefs.py ongewijzigd blijven werken (één control wisselt, niet
     de handler). De breedte volgt uit de labels, dus tekst kapt nooit af."""
     def initWithLabels_selected_target_action_(self, labels, sel, target, action):
+        labels = i18n.tt(labels)          # één keer vertalen: meten én tekenen doen de rest
         seg_pad, gap, pad_out, h = 11, 2, 2, 26
         widths = []
         for t in labels:
@@ -351,6 +361,7 @@ class Dropdown(NSView):
     niet de handler). De breedte volgt uit het bréédste label, zodat een keuze de rij
     nooit laat verspringen."""
     def initWithLabels_selected_target_action_(self, labels, sel, target, action):
+        labels = i18n.tt(labels)          # idem: de opgeslagen _labels zijn al vertaald
         pad, h = 11, 26
         wmax = 0.0
         for t in labels:

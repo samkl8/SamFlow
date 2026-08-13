@@ -77,7 +77,9 @@ import telemetry
 
 # ---------- config ----------
 SERVER_URL = "http://127.0.0.1:8181/inference"
-LANGUAGE = "nl"            # "auto" lets Whisper detect, unreliable on short clips
+# De dicteertaal is een instelling (settings "language", default "nl"); transcribe() geeft
+# 'm per dictaat aan whisper-server door en cleanup/polish lezen 'm zelf. Hier stond ooit
+# een constante LANGUAGE -- die was al dood en is weg, zodat er één bron van waarheid is.
 SAMPLE_RATE = 16000
 BLOCK = 1024               # 64 ms per block at 16 kHz
 PREROLL_SEC = 0.4          # audio kept from *before* you pressed Fn

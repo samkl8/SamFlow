@@ -42,6 +42,13 @@ _MIN_PREDICT = 512     # genoeg voor een kort dictaat; de oude vaste waarde
 # few-shot die witregels/streepjes voordoet maakte 'ie nooit alinea's of opsommingen.
 # Raak dit niet aan zonder opnieuw met echte dictaten te testen -- elke regel en elk
 # voorbeeld hieronder ving een echte misser.
+#
+# Regel 5 stond ooit op "Blijf in het Nederlands". Dat was fout zodra de taal instelbaar
+# werd: gemeten met qwen2.5:3b kwam een Engels dictaat er als **Nederlandse vertaling**
+# uit (woordbehoud 0,07) en `_sane` liet dat door, want de lengte klopte gewoon. De
+# few-shot hieronder is Nederlands en trekt hard, dus de regel benoemt die expliciet.
+# Zo gemeten: hetzelfde Engelse dictaat blijft nu Engels (woordbehoud 1,00), en drie
+# Nederlandse dictaten leverden onveranderd 1,00 op -- de few-shot mocht dus blijven.
 _SYSTEM = (
     "Je bent een redacteur die Nederlandse spraakdictaten opschoont tot nette geschreven "
     "tekst. Je polijst, je herschrijft NIET.\n\n"
@@ -52,7 +59,9 @@ _SYSTEM = (
     "3. Bij een verspreking of zelfcorrectie ('nee, wacht', 'ik bedoel', 'de... nee') houd je "
     "ALLEEN de gecorrigeerde versie; de foute aanzet laat je weg.\n"
     "4. Verwijder aarzelingen en stopwoorden (eh, uhm, weet je, zeg maar, 'dus' als opvulling).\n"
-    "5. Herstel grammatica, interpunctie en hoofdletters. Blijf in het Nederlands.\n\n"
+    "5. Herstel grammatica, interpunctie en hoofdletters. Schrijf je antwoord in EXACT "
+    "dezelfde taal als de invoer -- vertaal nooit, ook niet als de voorbeelden hieronder "
+    "een andere taal hebben.\n\n"
     "Structuur:\n"
     "6. Gaat het dictaat over meerdere onderwerpen of stappen? Splits in alinea's met een "
     "WITREGEL (lege regel) ertussen.\n"
@@ -80,6 +89,23 @@ _FEWSHOT = [
     {"role": "assistant",
      "content": "De build is groen, dus we kunnen mergen.\n\nDaarnaast wil ik het even hebben over de vakantieplanning, want ik ben volgende week weg."},
 ]
+
+
+# De taal noemen werkt meetbaar beter dan "dezelfde taal als de invoer". Gemeten met
+# qwen2.5:3b op een Duits dictaat: woordbehoud 0,18 (het model antwoordde in het
+# Nederlands, getrokken door de Nederlandse few-shot) tegen 0,91 zodra de prompt "in het
+# Duits" zegt. Bij "auto" kennen we de taal niet, en dan is de dezelfde-taal-regel het
+# beste dat er is -- die houdt Engels wél vast (gemeten 1,00).
+_SAME_LANG = "in EXACT dezelfde taal als de invoer"
+_LANG_NAMES = {
+    "nl": "het Nederlands", "en": "het Engels", "de": "het Duits", "fr": "het Frans",
+    "es": "het Spaans", "it": "het Italiaans", "pt": "het Portugees",
+}
+
+
+def _system(lang: str) -> str:
+    name = _LANG_NAMES.get(lang)
+    return _SYSTEM.replace(_SAME_LANG, f"in {name}") if name else _SYSTEM
 
 
 def _norm(s: str) -> str:
@@ -113,10 +139,58 @@ def _leaks_fewshot(original: str, polished: str) -> bool:
     return any(frag in p and frag not in o for frag in _LEAK_FRAGMENTS)
 
 
+_CONTENT_WORD = re.compile(r"[^\W\d_]{4,}")
+_MIN_KEEP = 0.5    # zoveel van de inhoudswoorden hoort een polish te laten staan
+
+# Schrift-drift. Echt gebeurd met qwen2.5:3b, twee dictaten achter elkaar:
+#   "Oké, kun je me甚至 帮助 我 補正這件事？"
+# Dat is geen transcriptiefout maar een woord-voor-woord vertáling van het dictaat die
+# middenin de zin begint (甚至 = "even", 帮助 = "helpen", 補正這件事 = "dit fixen"). De
+# server leverde keurig Nederlands: vier varianten (met/zonder woordenlijst-prompt,
+# met/zonder taal) gaven allemaal de juiste zin -- het model erna kiepte om.
+# Waarom dit een eigen check heeft en niet aan `_kept_ratio` genoeg heeft: bij een lang
+# dictaat waarvan alleen de staart omschakelt blijft het woordbehoud ruim boven 0,5.
+# Grieks staat er bewust niet bij: een model dat "pi" als "π" schrijft is geen drift.
+_SCRIPTS = (
+    ("Chinees", 0x4E00, 0x9FFF), ("Chinees", 0x3400, 0x4DBF),
+    ("Japans", 0x3040, 0x30FF), ("Koreaans", 0xAC00, 0xD7AF),
+    ("Cyrillisch", 0x0400, 0x04FF), ("Arabisch", 0x0600, 0x06FF),
+    ("Hebreeuws", 0x0590, 0x05FF), ("Devanagari", 0x0900, 0x097F),
+    ("Thai", 0x0E00, 0x0E7F),
+)
+
+
+def _script_drift(original: str, polished: str) -> str:
+    """De naam van een schrift dat in de opgepoetste tekst opduikt terwijl het dictaat
+    het niet had. Leeg = niets aan de hand. Dicteer je zélf Chinees, dan staat het in
+    beide en keurt deze check niets af."""
+    for naam, lo, hi in _SCRIPTS:
+        if (any(lo <= ord(c) <= hi for c in polished)
+                and not any(lo <= ord(c) <= hi for c in original)):
+            return naam
+    return ""
+
+
+def _kept_ratio(original: str, polished: str) -> float:
+    """Welk deel van de inhoudswoorden uit het dictaat haalt de opgepoetste tekst?
+    Vergeleken op de eerste vijf letters, zodat een verbogen vorm ('versturen' ->
+    'verstuurd') gewoon meetelt. Een polish laat de woorden per definitie staan (regels
+    1 en 2 van de prompt); een vertaling deelt er bijna geen. Gemeten: 1,00 bij drie
+    Nederlandse dictaten, 0,07 toen het model een Engels dictaat vertaalde."""
+    def stems(s):
+        return {w[:5] for w in _CONTENT_WORD.findall(s.lower())}
+    want = stems(original)
+    if not want:
+        return 1.0            # niets om te tellen (heel kort dictaat): geen oordeel
+    return len(want & stems(polished)) / len(want)
+
+
 def _sane(original: str, polished: str) -> bool:
     """Conservatieve vangrail: accepteer de polish alleen als 'ie plausibel een
     opgeschoonde versie is -- geen leeg, ge-explodeerd of ingeklapt antwoord. Polijsten
-    kort licht in (stopwoorden eruit); sterk uitdijen wijst op uitleg/hallucinatie."""
+    kort licht in (stopwoorden eruit); sterk uitdijen wijst op uitleg/hallucinatie.
+    Let op wat deze check *niet* ziet: een vertaling heeft een prima lengte. Daar is
+    `_kept_ratio` voor."""
     if not polished:
         return False
     o, p = len(original), len(polished)
@@ -151,7 +225,8 @@ def polish(text: str) -> str:
     predict, timeout = _budget(text)
     body = {
         "model": model,
-        "messages": [{"role": "system", "content": _SYSTEM}] + _FEWSHOT +
+        "messages": [{"role": "system",
+                      "content": _system(settings.get("language") or "auto")}] + _FEWSHOT +
                     [{"role": "user", "content": text}],
         "stream": False,
         "keep_alive": _KEEP_ALIVE,
@@ -181,6 +256,16 @@ def polish(text: str) -> str:
         return text
     if _leaks_fewshot(text, polished):
         print("  ! oppoets lekte een voorbeeldzin; opgeschoonde tekst gebruikt")
+        return text
+    drift = _script_drift(text, polished)
+    if drift:
+        print(f"  ! oppoets schakelde midden in de tekst over op {drift}; "
+              f"opgeschoonde tekst gebruikt")
+        return text
+    keep = _kept_ratio(text, polished)
+    if keep < _MIN_KEEP:
+        print(f"  ! oppoets gaf andere woorden terug dan het dictaat (behoud {keep:.2f}, "
+              f"vertaling of herschrijving); opgeschoonde tekst gebruikt")
         return text
     return polished
 

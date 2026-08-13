@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SamFlow — AI-oppoets setup-kaart</title>
+<style>
+  /* ============ Helder-tokens (gelijk aan app-interface.html) ============ */
+  :root{
+    --sg:#f4f4f6; --ss:#ffffff; --sunken:#f7f6f8; --si:#1b1b20; --sm:#5c5c66; --sf:#9a9aa4;
+    --sl:rgba(20,18,30,.10); --slx:rgba(20,18,30,.16);
+    --clay:#c67b52; --green:#33b859; --graphite:#1e1e22;
+    --sidebg:#f0eff3; --chip:#ebeaee; --shadow:rgba(20,18,30,.22);
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{ --sg:#0e0e12; --ss:#17171c; --sunken:#121216; --si:#f1f1f4; --sm:#9a9aa4; --sf:#63636d;
+      --sl:rgba(255,255,255,.10); --slx:rgba(255,255,255,.17);
+      --sidebg:#1b1b20; --chip:#26262c; --shadow:rgba(0,0,0,.55); }
+  }
+  :root[data-theme="light"]{ --sg:#f4f4f6; --ss:#ffffff; --sunken:#f7f6f8; --si:#1b1b20; --sm:#5c5c66; --sf:#9a9aa4;
+    --sl:rgba(20,18,30,.10); --slx:rgba(20,18,30,.16); --sidebg:#f0eff3; --chip:#ebeaee; --shadow:rgba(20,18,30,.22); }
+  :root[data-theme="dark"]{ --sg:#0e0e12; --ss:#17171c; --sunken:#121216; --si:#f1f1f4; --sm:#9a9aa4; --sf:#63636d;
+    --sl:rgba(255,255,255,.10); --slx:rgba(255,255,255,.17); --sidebg:#1b1b20; --chip:#26262c; --shadow:rgba(0,0,0,.55); }
+
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--sg); color:var(--si); font-family:var(--sans);
+    -webkit-font-smoothing:antialiased; line-height:1.5; }
+  .wrap{ max-width:1000px; margin:0 auto; padding:44px 22px 80px; }
+
+  .lede{ max-width:640px; margin:0 auto 6px; text-align:center; }
+  .eyebrow{ font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--clay); font-weight:700; margin:0 0 11px; }
+  h1{ font-size:clamp(24px,4vw,32px); letter-spacing:-.02em; margin:0 0 12px; line-height:1.12; text-wrap:balance; }
+  .lede p{ font-size:14.5px; color:var(--sm); margin:0; text-wrap:pretty; }
+
+  .themebar{ display:flex; justify-content:center; margin:22px 0 30px; }
+  .seg{ display:inline-flex; background:var(--sl); border-radius:999px; padding:3px; gap:2px; }
+  .seg button{ font:inherit; font-size:12.5px; font-weight:600; color:var(--sm); border:0; background:transparent;
+    padding:5px 13px; border-radius:999px; cursor:pointer; transition:.15s; }
+  .seg button:hover{ color:var(--si); }
+  .seg button.on{ background:var(--ss); color:var(--si); box-shadow:0 1px 3px rgba(20,18,30,.14), 0 0 0 .5px var(--sl); }
+
+  /* ============ state-grid ============ */
+  .states{ display:grid; grid-template-columns:1fr 1fr; gap:26px; }
+  @media (max-width:760px){ .states{ grid-template-columns:1fr; } }
+  .state{ display:flex; flex-direction:column; gap:12px; }
+  .state > .cap{ display:flex; align-items:center; gap:9px; font-size:12.5px; color:var(--sm); }
+  .state > .cap .num{ display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px;
+    border-radius:50%; background:var(--chip); color:var(--si); font-size:11.5px; font-weight:700; flex:0 0 auto; }
+  .state > .cap b{ color:var(--si); font-weight:650; }
+
+  /* ============ het instellingen-blok (zoals in de app) ============ */
+  .panel{ background:var(--ss); border-radius:14px; padding:14px; box-shadow:0 0 0 .5px var(--sl), 0 14px 30px -26px var(--shadow); }
+  .group{ background:var(--sunken); border-radius:12px; overflow:hidden; }
+
+  .row{ display:flex; align-items:center; gap:14px; padding:12px 14px; }
+  .row .rl{ flex:1 1 auto; min-width:0; }
+  .row .rl b{ display:block; font-size:13px; font-weight:550; letter-spacing:-.01em; }
+  .row .rl span{ display:block; font-size:11.5px; color:var(--sm); margin-top:2px; }
+
+  .sw{ width:38px; height:22px; border-radius:999px; background:var(--slx); position:relative; flex:0 0 auto; transition:.15s; }
+  .sw::after{ content:""; position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%;
+    background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.3); transition:.15s; }
+  .sw.on{ background:var(--green); } .sw.on::after{ left:18px; }
+  .sw.dim{ opacity:.45; }
+
+  .hair{ height:1px; background:var(--sl); margin:0 14px; }
+
+  /* ============ de setup-kaart onder de toggle ============ */
+  .setup{ padding:13px 14px; display:flex; flex-direction:column; gap:11px; }
+  .setup.clay{ background:linear-gradient(0deg, color-mix(in srgb,var(--clay) 6%, var(--sunken)), var(--sunken)); }
+
+  .st{ display:flex; align-items:center; gap:9px; }
+  .st .dot{ width:8px; height:8px; border-radius:50%; flex:0 0 auto; }
+  .st .dot.green{ background:var(--green); } .st .dot.clay{ background:var(--clay); } .st .dot.faint{ background:var(--sf); }
+  .st .txt{ font-size:12.5px; }
+  .st .txt b{ font-weight:600; } .st .txt span{ color:var(--sm); }
+
+  .meta{ font-size:11.5px; color:var(--sf); }
+  .meta b{ color:var(--sm); font-weight:600; }
+
+  .actions{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .btn{ font:inherit; font-size:12.5px; font-weight:600; border:0; border-radius:8px; padding:7px 13px; cursor:pointer;
+    display:inline-flex; align-items:center; gap:7px; }
+  .btn.clay{ background:var(--clay); color:#fff; }
+  .btn.ghost{ background:transparent; color:var(--sm); box-shadow:inset 0 0 0 1px var(--slx); }
+  .btn.link{ background:transparent; color:var(--clay); box-shadow:none; padding:7px 4px; }
+  .btn .sz{ font-weight:500; opacity:.85; }
+
+  .cmd{ display:flex; align-items:center; gap:10px; background:var(--ss); border-radius:8px; padding:8px 10px;
+    box-shadow:inset 0 0 0 1px var(--sl); }
+  .cmd code{ font-family:var(--mono); font-size:12px; color:var(--si); flex:1 1 auto; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .cmd .copy{ font:inherit; font-size:11.5px; font-weight:600; color:var(--sm); background:transparent; border:0;
+    box-shadow:inset 0 0 0 1px var(--slx); border-radius:6px; padding:4px 9px; cursor:pointer; flex:0 0 auto; }
+
+  .bar{ height:7px; border-radius:999px; background:var(--slx); overflow:hidden; }
+  .bar > i{ display:block; height:100%; border-radius:999px; background:var(--clay); }
+
+  .foot{ text-align:center; margin-top:40px; font-size:12px; color:var(--sf); }
+  .note{ max-width:660px; margin:34px auto 0; padding:16px 18px; background:var(--sunken); border-radius:12px;
+    box-shadow:0 0 0 .5px var(--sl); font-size:13px; color:var(--sm); }
+  .note b{ color:var(--si); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="lede">
+    <p class="eyebrow">SamFlow · Instellingen → Dicteren</p>
+    <h1>Setup-kaart voor het AI-oppoetsen</h1>
+    <p>De toggle zet Route B aan. De kaart eronder leest de status van Ollama en het model,
+       en helpt je in één klik verder — dezelfde stijl als de rechten-checklist. Hij verschijnt
+       alleen als je oppoetsen wílt, dus de basis-instellingen blijven rustig.</p>
+  </div>
+
+  <div class="themebar">
+    <div class="seg" id="seg">
+      <button data-t="light">Licht</button>
+      <button data-t="dark">Donker</button>
+      <button data-t="system" class="on">Systeem</button>
+    </div>
+  </div>
+
+  <div class="states">
+
+    <!-- 1. KLAAR -->
+    <div class="state">
+      <div class="cap"><span class="num">1</span> Ollama draait · model aanwezig — <b>klaar</b></div>
+      <div class="panel">
+        <div class="group">
+          <div class="row">
+            <div class="rl"><b>AI-oppoetsen (lokaal)</b>
+              <span>Een lokaal model maakt er nette zinnen van. ~0,6s extra en RAM.</span></div>
+            <div class="sw on"></div>
+          </div>
+          <div class="hair"></div>
+          <div class="setup">
+            <div class="st"><span class="dot green"></span>
+              <span class="txt"><b>Klaar om te gebruiken.</b> <span>Model qwen2.5:3b staat warm.</span></span></div>
+            <div class="meta">Draait lokaal via Ollama · geeft de RAM vanzelf vrij na 5&nbsp;min inactief.</div>
+            <div class="actions"><button class="btn link">Ander model kiezen…</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. MODEL ONTBREEKT -->
+    <div class="state">
+      <div class="cap"><span class="num">2</span> Ollama draait · model mist — <b>één klik</b></div>
+      <div class="panel">
+        <div class="group">
+          <div class="row">
+            <div class="rl"><b>AI-oppoetsen (lokaal)</b>
+              <span>Een lokaal model maakt er nette zinnen van. ~0,6s extra en RAM.</span></div>
+            <div class="sw dim"></div>
+          </div>
+          <div class="hair"></div>
+          <div class="setup clay">
+            <div class="st"><span class="dot clay"></span>
+              <span class="txt"><b>Model nog niet opgehaald.</b> <span>Nodig om oppoetsen aan te zetten.</span></span></div>
+            <div class="actions">
+              <button class="btn clay">Model ophalen <span class="sz">· qwen2.5:3b, 1,9 GB</span></button>
+            </div>
+            <div class="meta">Eenmalige download. Daarna zet de toggle 'm meteen aan.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. BEZIG MET OPHALEN -->
+    <div class="state">
+      <div class="cap"><span class="num">3</span> Download loopt — <b>voortgang</b></div>
+      <div class="panel">
+        <div class="group">
+          <div class="row">
+            <div class="rl"><b>AI-oppoetsen (lokaal)</b>
+              <span>Een lokaal model maakt er nette zinnen van. ~0,6s extra en RAM.</span></div>
+            <div class="sw dim"></div>
+          </div>
+          <div class="hair"></div>
+          <div class="setup clay">
+            <div class="st"><span class="dot clay"></span>
+              <span class="txt"><b>Model ophalen…</b> <span>62% · 1,2 / 1,9 GB</span></span></div>
+            <div class="bar"><i style="width:62%"></i></div>
+            <div class="actions"><button class="btn ghost">Annuleren</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. OLLAMA ONTBREEKT -->
+    <div class="state">
+      <div class="cap"><span class="num">4</span> Ollama niet gevonden — <b>installatie-hint</b></div>
+      <div class="panel">
+        <div class="group">
+          <div class="row">
+            <div class="rl"><b>AI-oppoetsen (lokaal)</b>
+              <span>Een lokaal model maakt er nette zinnen van. ~0,6s extra en RAM.</span></div>
+            <div class="sw dim"></div>
+          </div>
+          <div class="hair"></div>
+          <div class="setup">
+            <div class="st"><span class="dot faint"></span>
+              <span class="txt"><b>Ollama niet gevonden.</b> <span>De lokale model-runner die dit aandrijft.</span></span></div>
+            <div class="cmd"><code>brew install ollama</code><button class="copy">Kopiëren</button></div>
+            <div class="actions">
+              <button class="btn ghost">Opnieuw controleren</button>
+              <button class="btn link">Ollama openen&nbsp;↗</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="note">
+    <b>Plaatsing:</b> deze kaart hoort onder de "AI-oppoetsen"-toggle in <b>Instellingen → Dicteren</b> —
+    níét als verplichte stap in de eerste-start-wizard, want Route B is optioneel en zwaar (~2&nbsp;GB).
+    Hij leest live (`polish.available()`) welke van de vier toestanden geldt. <b>Kanttekening:</b>
+    "Model ophalen" is een echte `ollama pull` op de achtergrond met voortgang; "Ollama openen" en het
+    `brew`-commando kopiëren doet de app wél, maar `brew install` zelf draaien we niet (terminal-werk).
+  </div>
+
+  <p class="foot">Mockup ter beoordeling · lokaal gerenderd, geen artifact · thema volgt je systeem (licht/donker)</p>
+</div>
+
+<script>
+  const seg = document.getElementById('seg');
+  seg.addEventListener('click', e => {
+    const b = e.target.closest('button'); if(!b) return;
+    seg.querySelectorAll('button').forEach(x => x.classList.remove('on'));
+    b.classList.add('on');
+    const t = b.dataset.t;
+    if(t === 'system') document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.setAttribute('data-theme', t);
+  });
+</script>
+</body>
+</html>

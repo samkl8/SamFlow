@@ -47,6 +47,7 @@ import settings
 import theme
 import ui
 import updater
+from i18n import t as _t
 
 W = 300
 PAD = 16
@@ -167,7 +168,7 @@ class MenuPanel(NSObject):
     @objc.python_method
     def _action_row(self, root, y, title, symbol, selector):
         img = _symbol(symbol)
-        btn = NSButton.buttonWithTitle_target_action_("  " + title, self._ticker, selector)
+        btn = NSButton.buttonWithTitle_target_action_(_t("  ") + title, self._ticker, selector)
         if img is not None:
             btn.setImage_(img)
             btn.setImagePosition_(NSImageLeft)
@@ -242,7 +243,7 @@ class MenuPanel(NSObject):
             lbl.setStringValue_("Nog niets gedicteerd")
             lbl.setTextColor_(theme.FAINT)
         card.addSubview_(lbl)
-        copy = NSButton.buttonWithTitle_target_action_("Kopiëren", self._ticker, "copyLastText:")
+        copy = NSButton.buttonWithTitle_target_action_(_t("Kopiëren"), self._ticker, "copyLastText:")
         copy.setBordered_(False)
         copy.setFont_(NSFont.systemFontOfSize_(11.5))
         copy.setContentTintColor_(_rgb(_CLAY))
@@ -287,7 +288,7 @@ class MenuPanel(NSObject):
         root.addSubview_(_framed(
             ui.label(f"SamFlow · {self._version} · {appmode.label()}", 11.5, color=theme.FAINT),
             NSMakeRect(PAD, y + 5, 200, 15)))
-        stop = NSButton.buttonWithTitle_target_action_("Stop", self._ticker, "quit:")
+        stop = NSButton.buttonWithTitle_target_action_(_t("Stop"), self._ticker, "quit:")
         stop.setFont_(NSFont.systemFontOfSize_(12))
         stop.setBezelStyle_(1)
         stop.sizeToFit()

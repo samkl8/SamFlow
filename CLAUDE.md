@@ -12,7 +12,11 @@ model), `cleanup.py` (vocab-prompt + regels). Alles blijft op deze machine.
   dequantiseert simpeler op Metal) en kost ~+390 MB RAM. Beam search kost ~50 ms.
 - **Python:** de venv draait op een **door uv beheerde** 3.12, niet die van Homebrew.
   Zie "De TCC-val" in `README.md` — verander dit niet zonder die sectie te lezen.
-- **Taal:** `LANGUAGE = "nl"` in `samflow.py`.
+- **Taal:** een **instelling** (`language` in settings.json, default `"nl"`), niet een
+  constante. Hij gaat per dictaat naar whisper-server én stuurt `cleanup.LANGS` (commando's,
+  opsomming-markers, het label in de Whisper-prompt) en de prompt van `polish.py`. Voeg je
+  een taal toe aan de dropdown in `prefs.py`, geef 'm dan ook een profiel in `cleanup.py` —
+  zonder profiel dicteer je prima, maar val je terug op de gedeelde regels.
 
 ## Werkwijze bij een gemiste transcriptie
 Dit is de onderhoudslus van het project. Hoor je een woord dat er verkeerd uitkomt:
@@ -47,6 +51,17 @@ Dit is de onderhoudslus van het project. Hoor je een woord dat er verkeerd uitko
   hele discriminator. Verifieer met een echte transcriptie voordat je dit aanraakt.
 - De `HALLUCINATIONS`-lijst mag alleen de **volledige** output afkeuren, nooit een deel ervan.
   `Ga naar example.com` moet blijven staan; kale `Www.Nil.Com.Br` niet.
+- **Taal-specifieke regels horen in `LANGS`, niet in de gedeelde regels.** Een profiel vult
+  alléén in wat we van die taal weten; wat het openlaat — en álles bij `"auto"` — valt terug
+  op de vereniging van alle profielen. Dat is bewust de conservatieve kant op: een ruimere
+  stotter-uitzonderingslijst laat juist méér staan, en commando's/markers zijn letterlijke
+  woorden die in een andere taal niet voorkomen. Elk voorbeeld in `EXAMPLES` draagt daarom
+  een taalcode, inclusief de negatieve gevallen ("nieuwe regel" mag níét vuren in een Engels
+  dictaat).
+- **Het label vóór de woordenlijst in `whisper_prompt()` staat in de dicteertaal.** De
+  initial prompt stuurt óók de taalkeuze van de decoder: "Woordenlijst:" vóór een Engels
+  dictaat duwt Whisper richting Nederlands. Bij `"auto"` gaat het label er daarom helemaal
+  af — een kale termenlijst stuurt de taal het minst.
 
 ## Regels bij het aanpassen van lexicon.py
 - **De corrector mag nóóit een woord buiten de lijst aanraken.** Dat is de hele belofte.
@@ -95,6 +110,22 @@ Dit is de onderhoudslus van het project. Hoor je een woord dat er verkeerd uitko
   (`_budget`). `_sane` accepteert tot ~1,6x de invoer, dus daar is `num_predict` op gedimen-
   sioneerd. De timeout heeft wél een plafond (`_TIMEOUT_MAX`): een dictaat dat pas na een
   minuut geplakt wordt is erger dan een dictaat zonder oppoetsen.
+- **Een vertaling heeft een prima lengte — `_sane` ziet 'm dus niet.** Toen de taal
+  instelbaar werd, kwam een Engels dictaat er als Nederlandse vertaling uit en die glipte
+  moeiteloos langs de lengtecheck. Daarom `_kept_ratio`: welk deel van de inhoudswoorden
+  (≥4 letters, vergeleken op de eerste vijf) de opgepoetste tekst haalt. Gemeten: 1,00 bij
+  een echte polish (NL én EN), 0,07 bij een vertaling. Drempel 0,5. Sloop die check niet
+  weg als je aan de prompt werkt — hij is de enige die betekenis-drift ziet.
+- **Het model kan middenin een zin op een ander schrift overgaan.** Echt gebeurd, twee
+  dictaten achter elkaar: `Oké, kun je me甚至 帮助 我 補正這件事？` — een woord-voor-woord
+  vertaling die halverwege begint (qwen2.5:3b is Chinees getraind). whisper-server was
+  onschuldig: dezelfde zin gaf daar in vier varianten keurig Nederlands. `_script_drift`
+  is de vangrail, en die is er náást `_kept_ratio` omdat bij een lang dictaat waarvan
+  alleen de staart omkiept het woordbehoud gewoon 1,00 blijft.
+- **Noem de taal expliciet in de prompt zodra we 'm weten.** "Schrijf je antwoord in het
+  Duits" haalde 0,91 woordbehoud waar "in dezelfde taal als de invoer" op 0,18 bleef (de
+  Nederlandse few-shot trekt hard). Alleen bij `"auto"` blijft de dezelfde-taal-regel over;
+  die houdt Engels wél vast (1,00). De few-shot mag Nederlands blijven — gemeten.
 - Test een wijziging hier nooit met herhaalde audio. Een model dat drie identieke alinea's
   terecht samenvat, valt op `_sane` terug en dat lijkt dan een bug in je wijziging.
 
@@ -153,14 +184,53 @@ Dit is de onderhoudslus van het project. Hoor je een woord dat er verkeerd uitko
   timer staat stil zodra de run loop in event-tracking zit (menu open, venster slepen). Dat
   is normaal gedrag en zou een valse stack-dump opleveren; één vals alarm en je gelooft de
   volgende niet meer.
+- **De Python-stack alleen is niet genoeg.** Staat er niets boven `app.run()`, dan hangt de
+  main thread in code waar geen Python aan te pas komt en zegt de dump niets (zo stonden de
+  eerste zeven dumps erbij). Daarom schiet de waker er een `/usr/bin/sample` bij naar
+  `~/Library/Logs/samflow-stall-*.txt` en zet 'ie de diepste frames in de log. Lees die
+  staart als volgt: een mutex/Apple Event = een échte vastloper; `__CFRunLoopServiceMachPort`
+  → `mach_msg` = de app staat gewoon te wachten; **`runModalForWindow` = vals alarm** —
+  NSModalPanelRunLoopMode zit níét in de common modes, dus tijdens een `NSAlert.runModal()`
+  tikt onze timer nu eenmaal niet. Sampelen kost geen rechten en werkt juist wél terwijl de
+  app dood ligt (los proces), maar hooguit één per minuut: elk bestand is ~200 kB.
 - De ObjC-klassenaam moet uniek zijn in het hele proces (`_StallTicker`, want `hud.py` heeft
   al een `_Ticker`). Twee ObjC-klassen met dezelfde naam laat PyObjC bij import knallen.
+
+## Regels bij het aanpassen van i18n.py (de interfacetaal)
+- **De Nederlandse tekst ín de code is de sleutel.** Geen `t("prefs.dictation.title")`:
+  dat leest slechter, en een gemiste vertaling toont dan een sleutel op je scherm in plaats
+  van gewoon de Nederlandse zin. Nu is een gat hooguit één Nederlandse regel tussen het
+  Engels — lelijk, niet stuk.
+- **Vertaal in de *sinks*, niet op elke aanroepplek.** Alles loopt door `ui.label` /
+  `section` / `row_label` / `glabel` / `mono` en de labels van `Segmented`/`Dropdown`; daar
+  staat de `_t()`. Alleen wat rechtstreeks met AppKit praat (knoptitels, `NSAlert`,
+  `wrappingLabelWithString_`, venstertitels) is apart gewikkeld. Zo zijn het tien plekken
+  in plaats van tweehonderd, en pikt nieuwe tekst de vertaling vanzelf op.
+- **Importeer nooit als kale `t`.** `Segmented`/`Dropdown` gebruiken `t` al als lusvariabele
+  over hun labels; overal staat daarom `from i18n import t as _t`.
+- **Samengestelde zinnen knip je op de vaste stukken.** `f"Reeks — {n} dagen op rij"` is
+  geen sleutel; `_t("Reeks — ") + n + _t(" dagen") + _t(" op rij")` wel. Datumnamen
+  (weekdagen, maanden, dagdelen) zijn géén tabel-sleutels maar eigen lijsten per taal in
+  `mainwindow.py`, want daar prik je op index in.
+- **Controleer een wijziging door de views écht te renderen**, niet door te lezen:
+  `PrefsController.build_view()` en `MainWindow._tab_view(0..3)` bouwen headless prima op,
+  en dan is de test simpel — een gerenderde tekst die nog een *sleutel* uit `EN` is, is een
+  gemiste vertaling. Zo kwam de laatste `_DAYS_NL`-verwijzing boven water: die crashte het
+  dashboard. `python i18n.py` is de statische helft van diezelfde controle.
 
 ## Regels bij het aanpassen van hud.py
 - **De pill mag nooit focus pakken.** Het is een `NSPanel` met
   `NSWindowStyleMaskNonactivatingPanel`, getoond met `orderFrontRegardless()`. Gebruik nooit
   `makeKeyAndOrderFront_`: dan gaat de `Cmd+V` die erop volgt naar de pill in plaats van naar
   de editor waar je in stond.
+- **Geen bestandssysteem in de 60 fps-tik.** `_on_tick` deed per frame een
+  `settings.get("show_pill")`, en dat was tot voor kort een `stat()`-syscall (de mtime-cache
+  van settings). Zestig syscalls per seconde op de main thread kosten normaal niets — tot
+  het bestandssysteem één keer hikt, en dan staat de héle app stil. Zo gevangen door
+  `stall.py`: **6,2 seconden vast, met `getmtime` als bovenste frame.** Nu twee keer
+  afgedekt: de lookup staat achter `state != "idle"` (een idle app raakt 'm niet aan) en
+  `settings._load()` doet die stat hooguit vijf keer per seconde (`RECHECK_SEC`). Zet hier
+  nooit een nieuwe lees-uit-een-bestand-call in zonder diezelfde twee vragen.
 - **Alle AppKit-calls op de main thread.** Achtergrondthreads schrijven alleen naar
   `Hud.state` / `Hud.level`; een 60 fps `NSTimer` op de main thread leest die en tekent
   (60 i.p.v. 30 sinds de entrance/exit-springs — een soepele veer wil meer frames; de
