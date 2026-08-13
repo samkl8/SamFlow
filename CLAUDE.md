@@ -153,6 +153,15 @@ Dit is de onderhoudslus van het project. Hoor je een woord dat er verkeerd uitko
   timer staat stil zodra de run loop in event-tracking zit (menu open, venster slepen). Dat
   is normaal gedrag en zou een valse stack-dump opleveren; één vals alarm en je gelooft de
   volgende niet meer.
+- **De Python-stack alleen is niet genoeg.** Staat er niets boven `app.run()`, dan hangt de
+  main thread in code waar geen Python aan te pas komt en zegt de dump niets (zo stonden de
+  eerste zeven dumps erbij). Daarom schiet de waker er een `/usr/bin/sample` bij naar
+  `~/Library/Logs/samflow-stall-*.txt` en zet 'ie de diepste frames in de log. Lees die
+  staart als volgt: een mutex/Apple Event = een échte vastloper; `__CFRunLoopServiceMachPort`
+  → `mach_msg` = de app staat gewoon te wachten; **`runModalForWindow` = vals alarm** —
+  NSModalPanelRunLoopMode zit níét in de common modes, dus tijdens een `NSAlert.runModal()`
+  tikt onze timer nu eenmaal niet. Sampelen kost geen rechten en werkt juist wél terwijl de
+  app dood ligt (los proces), maar hooguit één per minuut: elk bestand is ~200 kB.
 - De ObjC-klassenaam moet uniek zijn in het hele proces (`_StallTicker`, want `hud.py` heeft
   al een `_Ticker`). Twee ObjC-klassen met dezelfde naam laat PyObjC bij import knallen.
 
