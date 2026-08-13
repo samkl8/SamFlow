@@ -21,7 +21,9 @@ SETTINGS_FILE = os.path.join(BASE, "settings.json")
 # De defaults spiegelen de constanten in samflow.py van vóór dit venster; een
 # ontbrekende sleutel valt hierop terug, dus 'geen settings.json' == oud gedrag.
 DEFAULTS = {
-    "language": "nl",     # "nl" | "en" | "auto" -- per dictaat naar whisper-server
+    "language": "nl",     # dicteertaal: "nl"|"en"|"de"|"fr"|"es"|"it"|"pt"|"auto" -- gaat per
+                          # dictaat naar whisper-server en stuurt cleanup.LANGS + polish
+    "ui_language": "auto",  # taal van de vensters: "auto" (volgt de Mac) | "nl" | "en"; zie i18n.py
     "sound_cues": True,   # klik bij start / stop / klaar
     "pause_media": True,  # media stilhouden tijdens een dictaat: Spotify/Music pauzeren + webaudio dempen
     "show_pill": True,    # de zwevende pill bij de cursor (menubalk blijft altijd)

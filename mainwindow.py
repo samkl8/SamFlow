@@ -59,6 +59,8 @@ import stats
 import theme
 import ui
 import updater
+import i18n
+from i18n import t as _t
 
 SIDE_W = 210                   # vaste zijbalk; alleen de content-kolom groeit mee
 MIN_CONTENT_W = ui.W           # 470 -- de smalste stand; de prefs-view past hier 1:1 in
@@ -68,14 +70,28 @@ MIN_WIN_H = 480                # onder deze hoogte wordt het dashboard te krap
 STATS_4COL_W = 620             # inner-breedte vanaf waar de stat-tegels 4-op-een-rij gaan
 
 _GRAPHITE = (0.118, 0.118, 0.133)         # #1E1E22 -- de constante van SamFlow
-_DAYS_NL = ["ma", "di", "wo", "do", "vr", "za", "zo"]
-_MONTHS_NL = ["januari", "februari", "maart", "april", "mei", "juni", "juli",
-              "augustus", "september", "oktober", "november", "december"]
-_WEEKDAYS_NL = ["maandag", "dinsdag", "woensdag", "donderdag", "vrijdag",
-                "zaterdag", "zondag"]
-_MON_ABBR = ["jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep",
-             "okt", "nov", "dec"]
-_DAYPART_PEAK = ["'s nachts", "'s ochtends", "'s middags", "'s avonds"]
+# Datumnamen staan hier zelf en komen niet uit de vertaaltabel: het zijn lijsten waar we
+# op index in prikken, geen losse zinnen. Welke set geldt, bepaalt de interfacetaal.
+_DAYS = {"nl": ["ma", "di", "wo", "do", "vr", "za", "zo"],
+         "en": ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]}
+_MONTHS = {"nl": ["januari", "februari", "maart", "april", "mei", "juni", "juli",
+                  "augustus", "september", "oktober", "november", "december"],
+           "en": ["January", "February", "March", "April", "May", "June", "July",
+                  "August", "September", "October", "November", "December"]}
+_WEEKDAYS = {"nl": ["maandag", "dinsdag", "woensdag", "donderdag", "vrijdag",
+                    "zaterdag", "zondag"],
+             "en": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
+                    "Saturday", "Sunday"]}
+_MONTHS_ABBR = {"nl": ["jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep",
+                       "okt", "nov", "dec"],
+                "en": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep",
+                       "Oct", "Nov", "Dec"]}
+_DAYPARTS = {"nl": ["'s nachts", "'s ochtends", "'s middags", "'s avonds"],
+             "en": ["at night", "in the morning", "in the afternoon", "in the evening"]}
+
+
+def _names(tabel):
+    return tabel.get(i18n.language(), tabel["nl"])
 
 NAV = [
     ("Overzicht", "waveform"),
@@ -142,13 +158,14 @@ def _nl_dec(x, digits=1):
 
 def _nl_date(dt):
     """'vrijdag 17 juli'."""
-    return f"{_WEEKDAYS_NL[dt.weekday()]} {dt.day} {_MONTHS_NL[dt.month - 1]}"
+    return (f"{_names(_WEEKDAYS)[dt.weekday()]} {dt.day} "
+            f"{_names(_MONTHS)[dt.month - 1]}")
 
 
 def _greeting(dt):
     """'Goedemorgen, Sam' -- naam uit de macOS-accountnaam (niet hardgecodeerd)."""
     h = dt.hour
-    part = "Goedemorgen" if h < 12 else "Goedemiddag" if h < 18 else "Goedenavond"
+    part = _t("Goedemorgen") if h < 12 else _t("Goedemiddag") if h < 18 else _t("Goedenavond")
     try:
         name = (NSFullUserName() or "").split()[0]
     except Exception:
@@ -295,7 +312,7 @@ class _WeekChart(NSView):
             bh = (wv / mx) * self._area_h
             self._bars.append((bx, bw, bh))
             # dag-label onder de bar
-            dl = ui.label(_DAYS_NL[i], 10,
+            dl = ui.label(_names(_DAYS)[i], 10,
                           color=(_rgb(_CLAY) if i == today_index
                                  else theme.FAINT))
             dl.setAlignment_(NSTextAlignmentCenter)
@@ -432,7 +449,7 @@ class _Heatmap(NSView):
             col_monday = this_monday - timedelta(days=(weeks - 1 - col) * 7)
             cx = LEFTW + col * pitch
             if col_monday.month != last_mon:
-                month_marks.append((cx, _MON_ABBR[col_monday.month - 1]))
+                month_marks.append((cx, _names(_MONTHS_ABBR)[col_monday.month - 1]))
                 last_mon = col_monday.month
             for row in range(7):
                 day = col_monday + timedelta(days=row)
@@ -442,7 +459,8 @@ class _Heatmap(NSView):
                                         "words": 0, "level": 0, "dl": ""})
                     continue
                 words = int(hm_days.get(day.isoformat(), 0))
-                dl = f"{_DAYS_NL[day.weekday()]} {day.day} {_MON_ABBR[day.month - 1]}"
+                dl = (f"{_names(_DAYS)[day.weekday()]} {day.day} "
+                      f"{_names(_MONTHS_ABBR)[day.month - 1]}")
                 self._cells.append({"x": cx, "y": y, "size": cell, "valid": True,
                                     "words": words, "level": 0, "dl": dl})
         # niveaus: 0 voor lege dagen, anders 1..4 t.o.v. een robuuste bovengrens (85e
@@ -456,7 +474,7 @@ class _Heatmap(NSView):
 
         # dag-labels links (ma/wo/vr, zoals de mockup), maand-labels boven
         for row in (0, 2, 4):
-            dl = ui.label(_DAYS_NL[row], 8.5, color=theme.FAINT)
+            dl = ui.label(_names(_DAYS)[row], 8.5, color=theme.FAINT)
             dl.setFrame_(NSMakeRect(0, grid_top + row * pitch - 1, LEFTW - 3, 12))
             dl.setAlignment_(NSTextAlignmentRight)
             self.addSubview_(dl)
@@ -831,7 +849,7 @@ class MainWindow(NSObject):
             NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
             | NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable,
             NSBackingStoreBuffered, False)
-        win.setTitle_("SamFlow")
+        win.setTitle_(_t("SamFlow"))
         win.setContentView_(root)
         win.setContentMinSize_((WIN_W, MIN_WIN_H))   # nooit smaller dan de prefs-kolom
         win.setBackgroundColor_(theme.WINDOW)      # --ss: het app-oppervlak
@@ -968,7 +986,7 @@ class MainWindow(NSObject):
         search = NSSearchField.alloc().initWithFrame_(
             NSMakeRect(cw - ui.PAD - search_w, y - 1, search_w, 26))
         try:
-            search.setPlaceholderString_("Zoek in dictaten…")
+            search.setPlaceholderString_(_t("Zoek in dictaten…"))
         except Exception:
             pass
         search.setTarget_(self)
@@ -980,9 +998,9 @@ class MainWindow(NSObject):
 
         # meta-regel: bewaartermijn + klei-links "Wis alles" / "Zet uit"
         days = settings.get("history_days")
-        keep = ("altijd bewaard" if not days
-                else f"bewaart {days} dagen, daarna vanzelf weg")
-        meta = ui.label(f"Aan · {keep} · ", 11.5, color=theme.TEXT2)
+        keep = (_t("altijd bewaard") if not days
+                else _t("bewaart ") + f"{days}" + _t(" dagen, daarna vanzelf weg"))
+        meta = ui.label(_t("Aan · ") + f"{keep} · ", 11.5, color=theme.TEXT2)
         meta.sizeToFit()
         mw = meta.frame().size.width
         meta.setFrame_(NSMakeRect(ui.PAD, y, mw, 16))
@@ -1027,7 +1045,7 @@ class MainWindow(NSObject):
 
     @objc.python_method
     def _link_btn(self, title, action, tag=0):
-        b = NSButton.buttonWithTitle_target_action_(title, self, action)
+        b = NSButton.buttonWithTitle_target_action_(_t(title), self, action)
         b.setBordered_(False)
         b.setFont_(NSFont.systemFontOfSize_(11.5))
         b.setContentTintColor_(_rgb(_CLAY))
@@ -1058,8 +1076,8 @@ class MainWindow(NSObject):
         t.setFrame_(NSMakeRect(16, 16, inner_w - 32, 20))
         card.addSubview_(t)
         body = NSTextField.wrappingLabelWithString_(
-            "Dan kun je ze later teruglezen, doorzoeken en opnieuw kopiëren — lokaal, "
-            "met bestandsrechten 0600, nooit op het netwerk.")
+            _t("Dan kun je ze later teruglezen, doorzoeken en opnieuw kopiëren — lokaal, "
+            "met bestandsrechten 0600, nooit op het netwerk."))
         body.setFont_(NSFont.systemFontOfSize_(12.5))
         body.setTextColor_(theme.TEXT2)
         body.setFrame_(NSMakeRect(16, 42, inner_w - 32, 38))
@@ -1073,7 +1091,7 @@ class MainWindow(NSObject):
             il.setFrame_(NSMakeRect(34, cy, inner_w - 66, 16))
             card.addSubview_(il)
             cy += 22
-        btn = NSButton.buttonWithTitle_target_action_("Bewaar lokaal", self, "historyEnable:")
+        btn = NSButton.buttonWithTitle_target_action_(_t("Bewaar lokaal"), self, "historyEnable:")
         btn.setBezelStyle_(1)
         btn.sizeToFit()
         bw = max(btn.frame().size.width, 130)
@@ -1106,7 +1124,7 @@ class MainWindow(NSObject):
         y = 0
         for d, rows in groups:
             delta = (today - d).days
-            hdr = ("Vandaag" if delta == 0 else "Gisteren" if delta == 1
+            hdr = (_t("Vandaag") if delta == 0 else _t("Gisteren") if delta == 1
                    else _nl_date(datetime(d.year, d.month, d.day)))
             y += 8
             y = ui.glabel(c, ui.PAD, y, inner_w, hdr)
@@ -1184,12 +1202,12 @@ class MainWindow(NSObject):
 
     def historyOff_(self, _sender):
         alert = NSAlert.alloc().init()
-        alert.setMessageText_("Historie uitzetten")
+        alert.setMessageText_(_t("Historie uitzetten"))
         alert.setInformativeText_(
             "Wil je de bewaarde dictaten ook wissen, of behouden op deze Mac?")
-        alert.addButtonWithTitle_("Wissen")       # NSAlertFirstButtonReturn  (1000)
-        alert.addButtonWithTitle_("Behouden")     # NSAlertSecondButtonReturn (1001)
-        alert.addButtonWithTitle_("Annuleren")    # NSAlertThirdButtonReturn  (1002)
+        alert.addButtonWithTitle_(_t("Wissen"))       # NSAlertFirstButtonReturn  (1000)
+        alert.addButtonWithTitle_(_t("Behouden"))     # NSAlertSecondButtonReturn (1001)
+        alert.addButtonWithTitle_(_t("Annuleren"))    # NSAlertThirdButtonReturn  (1002)
         r = alert.runModal()
         if r == 1002:
             return
@@ -1214,8 +1232,8 @@ class MainWindow(NSObject):
         v.addSubview_(title)
         y += 28
         sub = NSTextField.wrappingLabelWithString_(
-            "Wordt bij elk dictaat opnieuw gelezen — een woord toevoegen werkt meteen, "
-            "zonder herstart.")
+            _t("Wordt bij elk dictaat opnieuw gelezen — een woord toevoegen werkt meteen, "
+            "zonder herstart."))
         sub.setFont_(NSFont.systemFontOfSize_(12.5))
         sub.setTextColor_(theme.TEXT2)
         sub.setFrame_(NSMakeRect(ui.PAD, y, inner_w, 34))
@@ -1250,7 +1268,7 @@ class MainWindow(NSObject):
                 cx = nx - 10 - corw
                 cor.setFrame_(NSMakeRect(cx, by, corw, 22))
                 c.addSubview_(cor)
-                freq = ui.label(f"{count}× gehoord deze week", 11.5, color=theme.FAINT)
+                freq = ui.label(f"{count}" + _t("× gehoord deze week"), 11.5, color=theme.FAINT)
                 fx = 16 + tmw + 12
                 freq.setFrame_(NSMakeRect(fx, top + 15, max(60.0, cx - 12 - fx), 16))
                 c.addSubview_(freq)
@@ -1277,7 +1295,7 @@ class MainWindow(NSObject):
                 tag = len(self._term_list)
                 self._term_list.append(t)
             specs.append((t, "dashed" if is_ambig else "solid", removable, tag))
-        specs.append(("+ Nieuwe term", "add", False, -1))
+        specs.append((_t("+ Nieuwe term"), "add", False, -1))
         n_custom = len(self._term_list)
         y = ui.glabel(v, ui.PAD, y, inner_w, "Eigen termen",
                       f"{n_custom} — altijd in de juiste vorm geplakt")
@@ -1297,7 +1315,7 @@ class MainWindow(NSObject):
         for cx, cy, term, tw, w, style, removable, tag in placed:
             if style == "add":
                 btn = NSButton.buttonWithTitle_target_action_(
-                    "+ Nieuwe term", self, "wordNew:")
+                    _t("+ Nieuwe term"), self, "wordNew:")
                 btn.setBordered_(False)
                 btn.setFont_(NSFont.systemFontOfSize_(12))
                 btn.setContentTintColor_(_rgb(_CLAY))
@@ -1333,7 +1351,7 @@ class MainWindow(NSObject):
                 dst = ui.label(canon, 12.5, "medium")
                 dst.setFrame_(NSMakeRect(152, top + 10, w - 152 - 56, 18))
                 c.addSubview_(dst)
-                wis = NSButton.buttonWithTitle_target_action_("wis", self, "mapRemove:")
+                wis = NSButton.buttonWithTitle_target_action_(_t("wis"), self, "mapRemove:")
                 wis.setBordered_(False)
                 wis.setFont_(NSFont.systemFontOfSize_(11.5))
                 wis.setContentTintColor_(_rgb(_CLAY))
@@ -1345,7 +1363,7 @@ class MainWindow(NSObject):
             y = ui.card_group(v, ui.PAD, y, inner_w, [38] * len(maps_items), fill_map)
         # "+ Nieuwe correctie": zelfde in-app-lijn als "+ Nieuwe term" -- opent het gebrande
         # paneel met twee velden. add_mapping maakt mappings.txt zo nodig aan.
-        addc = NSButton.buttonWithTitle_target_action_("+ Nieuwe correctie", self, "mapNew:")
+        addc = NSButton.buttonWithTitle_target_action_(_t("+ Nieuwe correctie"), self, "mapNew:")
         addc.setBordered_(False)
         addc.setFont_(NSFont.systemFontOfSize_(12))
         addc.setContentTintColor_(_rgb(_CLAY))
@@ -1381,7 +1399,7 @@ class MainWindow(NSObject):
                 ax = 14 + chip_w + 8
                 arr.setFrame_(NSMakeRect(ax, top + 12, 16, 16))
                 c.addSubview_(arr)
-                wis = NSButton.buttonWithTitle_target_action_("wis", self, "snipRemove:")
+                wis = NSButton.buttonWithTitle_target_action_(_t("wis"), self, "snipRemove:")
                 wis.setBordered_(False)
                 wis.setFont_(NSFont.systemFontOfSize_(11.5))
                 wis.setContentTintColor_(_rgb(_CLAY))
@@ -1396,7 +1414,7 @@ class MainWindow(NSObject):
                 c.addSubview_(expl)
 
             y = ui.card_group(v, ui.PAD, y, inner_w, [40] * len(snip_items), fill_snip)
-        adds = NSButton.buttonWithTitle_target_action_("+ Nieuwe snippet", self, "snipNew:")
+        adds = NSButton.buttonWithTitle_target_action_(_t("+ Nieuwe snippet"), self, "snipNew:")
         adds.setBordered_(False)
         adds.setFont_(NSFont.systemFontOfSize_(12))
         adds.setContentTintColor_(_rgb(_CLAY))
@@ -1432,7 +1450,7 @@ class MainWindow(NSObject):
         lbl.setFrame_(NSMakeRect(12, 5, tw, 16))
         chip.addSubview_(lbl)
         if removable:
-            rm = NSButton.buttonWithTitle_target_action_("×", self, "termRemove:")
+            rm = NSButton.buttonWithTitle_target_action_(_t("×"), self, "termRemove:")
             rm.setBordered_(False)
             rm.setFont_(NSFont.systemFontOfSize_(13))
             rm.setContentTintColor_(theme.FAINT)
@@ -1522,7 +1540,7 @@ class MainWindow(NSObject):
             title = "Nieuwe termen"
             sub = "Projectnamen, merken of jargon. Schrijf ze zoals je ze geplakt wilt zien."
         elif mode == "correct":
-            title = f"“{word}” toevoegen of corrigeren"
+            title = f"“{word}”" + _t(" toevoegen of corrigeren")
             sub = "Laat staan om zo toe te voegen, of pas aan naar de juiste schrijfwijze."
         elif mode == "snippet":
             title = "Nieuwe snippet"
@@ -1536,7 +1554,7 @@ class MainWindow(NSObject):
         y += 30
         # Afbrekend label: de zin is breder dan het paneel, dus een enkelregelig label
         # kapte 'm af. wrappingLabelWithString_ laat 'm netjes over twee regels lopen.
-        s = NSTextField.wrappingLabelWithString_(sub)
+        s = NSTextField.wrappingLabelWithString_(_t(sub))
         s.setFont_(NSFont.systemFontOfSize_(12.5))
         s.setTextColor_(theme.TEXT2)
         s.setFrame_(NSMakeRect(P, y, iw, 34))
@@ -1810,7 +1828,8 @@ class MainWindow(NSObject):
                 h = 3 + (dayparts[i] / mx) * max_h
                 col = _rgb(_CLAY, 1.0) if i == peak else _rgb(_CLAY, 0.38)
                 card.addSubview_(ui.fill(NSMakeRect(px + i * (bw + gap), base_y - h, bw, h), col, 2))
-            peaktxt = f"piek — {_DAYPART_PEAK[peak]}" if peak is not None else "piekmoment"
+            peaktxt = (_t("piek — ") + _names(_DAYPARTS)[peak] if peak is not None
+                       else _t("piekmoment"))
         else:
             peaktxt = "nog geen ritme"
         pl = ui.label(peaktxt, 11, color=theme.FAINT)
@@ -1996,11 +2015,13 @@ class MainWindow(NSObject):
         hm_h = _heatmap_height(hm_w)
         card_h = 34 + hm_h + 12
         hm_card = _card(NSMakeRect(ui.PAD, y, inner_w, card_h))
-        hct = ui.label(f"Reeks — {streak} {'dag' if streak == 1 else 'dagen'} op rij", 13, "bold")
+        hct = ui.label(_t("Reeks — ") + f"{streak} "
+                       + _t("dag" if streak == 1 else "dagen") + _t(" op rij"), 13, "bold")
         hct.setFrame_(NSMakeRect(14, 12, inner_w - 170, 18))
         hm_card.addSubview_(hct)
         if longest:
-            hcr = ui.label(f"langste · {longest} {'dag' if longest == 1 else 'dagen'}", 11,
+            hcr = ui.label(_t("langste · ") + f"{longest} "
+                           + _t("dag" if longest == 1 else "dagen"), 11,
                            color=theme.FAINT)
             hcr.setAlignment_(NSTextAlignmentRight)
             hcr.setFrame_(NSMakeRect(inner_w - 14 - 150, 14, 150, 15))

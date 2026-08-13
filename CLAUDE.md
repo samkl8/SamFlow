@@ -196,6 +196,28 @@ Dit is de onderhoudslus van het project. Hoor je een woord dat er verkeerd uitko
 - De ObjC-klassenaam moet uniek zijn in het hele proces (`_StallTicker`, want `hud.py` heeft
   al een `_Ticker`). Twee ObjC-klassen met dezelfde naam laat PyObjC bij import knallen.
 
+## Regels bij het aanpassen van i18n.py (de interfacetaal)
+- **De Nederlandse tekst ín de code is de sleutel.** Geen `t("prefs.dictation.title")`:
+  dat leest slechter, en een gemiste vertaling toont dan een sleutel op je scherm in plaats
+  van gewoon de Nederlandse zin. Nu is een gat hooguit één Nederlandse regel tussen het
+  Engels — lelijk, niet stuk.
+- **Vertaal in de *sinks*, niet op elke aanroepplek.** Alles loopt door `ui.label` /
+  `section` / `row_label` / `glabel` / `mono` en de labels van `Segmented`/`Dropdown`; daar
+  staat de `_t()`. Alleen wat rechtstreeks met AppKit praat (knoptitels, `NSAlert`,
+  `wrappingLabelWithString_`, venstertitels) is apart gewikkeld. Zo zijn het tien plekken
+  in plaats van tweehonderd, en pikt nieuwe tekst de vertaling vanzelf op.
+- **Importeer nooit als kale `t`.** `Segmented`/`Dropdown` gebruiken `t` al als lusvariabele
+  over hun labels; overal staat daarom `from i18n import t as _t`.
+- **Samengestelde zinnen knip je op de vaste stukken.** `f"Reeks — {n} dagen op rij"` is
+  geen sleutel; `_t("Reeks — ") + n + _t(" dagen") + _t(" op rij")` wel. Datumnamen
+  (weekdagen, maanden, dagdelen) zijn géén tabel-sleutels maar eigen lijsten per taal in
+  `mainwindow.py`, want daar prik je op index in.
+- **Controleer een wijziging door de views écht te renderen**, niet door te lezen:
+  `PrefsController.build_view()` en `MainWindow._tab_view(0..3)` bouwen headless prima op,
+  en dan is de test simpel — een gerenderde tekst die nog een *sleutel* uit `EN` is, is een
+  gemiste vertaling. Zo kwam de laatste `_DAYS_NL`-verwijzing boven water: die crashte het
+  dashboard. `python i18n.py` is de statische helft van diezelfde controle.
+
 ## Regels bij het aanpassen van hud.py
 - **De pill mag nooit focus pakken.** Het is een `NSPanel` met
   `NSWindowStyleMaskNonactivatingPanel`, getoond met `orderFrontRegardless()`. Gebruik nooit

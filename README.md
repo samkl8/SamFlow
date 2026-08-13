@@ -112,7 +112,12 @@ SamFlow learns *your* words through one file, `lexicon.txt` (personal, git-ignor
 Built-in defaults live in `lexicon.py` (`DEFAULT_TERMS`); rare non-personal phonetic misses
 live in `REPLACEMENTS` in `cleanup.py`.
 
-**Language:** pick it in **Preferences → Dictation → "Taal"** (Dutch, English, German,
+**Interface language:** the windows follow your Mac — a Dutch system gets Dutch, everything
+else gets English. Override it in **Preferences → Appearance → "Interface language"**
+(`ui_language` in `settings.json`: `auto` / `nl` / `en`). Dutch is the source language and
+the translation table lives in `i18n.py`; run `python i18n.py` to see what is still missing.
+
+**Dictation language:** pick it in **Preferences → Dictation → "Taal"** (Dutch, English, German,
 French, Spanish, Italian, Portuguese, or *Automatisch* — Whisper detects per dictation).
 Stored as `language` in `settings.json`; it takes effect on the next dictation, no restart
 and no `install.sh` re-run. The setting travels through the whole pipeline: Whisper gets it
