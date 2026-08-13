@@ -57,7 +57,10 @@ echo "    venv + dependencies ✓"
 # ---------------------------------------------------- warm-model launchd service
 say "4/6  Warm-model service (whisper-server via launchd)"
 WHISPER_SERVER="$(command -v whisper-server)"
-LANGUAGE="$(grep -m1 '^LANGUAGE' samflow.py | sed -E 's/^LANGUAGE[^"]*"([a-z]+)".*/\1/')"; LANGUAGE="${LANGUAGE:-en}"
+# De dicteertaal is een instelling geworden (settings.json), niet langer een constante in
+# samflow.py. De server krijgt de default mee als -l; elk dictaat stuurt z'n eigen taal mee
+# en overrulet die vlag, dus dit is puur de stand vóór de eerste keuze.
+LANGUAGE="$(grep -m1 '"language":' settings.py | sed -E 's/.*"language": *"([a-z]+)".*/\1/')"; LANGUAGE="${LANGUAGE:-nl}"
 mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
 sed -e "s|@@WHISPER_SERVER@@|$WHISPER_SERVER|g" \
     -e "s|@@SAMFLOW_DIR@@|$DIR|g" \
@@ -99,8 +102,9 @@ cat <<EOF
   b) Fn-toets vrijmaken:
         Systeeminstellingen > Toetsenbord > "Druk op de fn-toets om" > "Niets doen"
 
-  c) Taal & jargon: standaard staat de taal op '$LANGUAGE'. Pas 'LANGUAGE' in
-     samflow.py aan en vul VOCAB in cleanup.py met jouw eigen woorden.
+  c) Taal & jargon: de dicteertaal staat op '$LANGUAGE' en is te wisselen in
+     Voorkeuren > Dicteren > Taal (7 talen + automatisch). De taal van de vensters
+     volgt standaard je Mac. Eigen woorden voeg je toe in de Woordenlijst-tab.
 
   Daarna starten:
         open -a "$APP"

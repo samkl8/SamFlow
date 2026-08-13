@@ -894,7 +894,7 @@ class WelcomeWindow(NSObject):
         ask.setFrame_(NSMakeRect(PAD, y, max(ask.frame().size.width, 150), 30))
         v.addSubview_(ask)
         self._begin = NSButton.buttonWithTitle_target_action_(
-            "Begin met dicteren", self, "begin:")
+            _t("Begin met dicteren"), self, "begin:")
         self._begin.sizeToFit()
         beginw = max(self._begin.frame().size.width, 150)
         self._begin.setFrame_(NSMakeRect(W - PAD - beginw, y, beginw, 30))
@@ -935,9 +935,9 @@ class WelcomeWindow(NSObject):
             self._fn_dot.setStringValue_("✓" if free else "⚠")
             self._fn_dot.setTextColor_(NSColor.systemGreenColor() if free else _CLAY)
             self._fn_lbl.setStringValue_(
-                "Fn-toets is vrij — klaar voor SamFlow." if free else
-                "Fn opent nu iets van macOS (emoji-kiezer). Zet Toetsenbord → "
-                "“Druk op fn” op “Niets doen”.")
+                _t("Fn-toets is vrij — klaar voor SamFlow.") if free else
+                _t("Fn opent nu iets van macOS (emoji-kiezer). Zet Toetsenbord → "
+                   "“Druk op fn” op “Niets doen”."))
             self._fn_lbl.setTextColor_(
                 NSColor.secondaryLabelColor() if free else _CLAY)
 
