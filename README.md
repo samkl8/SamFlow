@@ -15,8 +15,8 @@ tools, but fully local, private, and teachable to your own vocabulary.
 - **Polished** — a floating pill that follows your cursor, pauses your music while you
   talk, and never degrades your Bluetooth audio quality.
 
-> Requires **macOS on Apple Silicon** (M1 or newer). Defaults to Dutch (`nl`); see
-> [Customising](#customising) to switch language.
+> Requires **macOS on Apple Silicon** (M1 or newer). Defaults to Dutch (`nl`); switch to
+> another language in Preferences — see [Customising](#customising).
 
 ---
 
@@ -112,8 +112,13 @@ SamFlow learns *your* words through one file, `lexicon.txt` (personal, git-ignor
 Built-in defaults live in `lexicon.py` (`DEFAULT_TERMS`); rare non-personal phonetic misses
 live in `REPLACEMENTS` in `cleanup.py`.
 
-**Language:** set `LANGUAGE` in `samflow.py` (`"nl"`, `"en"`, …) and re-run `install.sh`
-so the warm service matches. Put terms in your language in `lexicon.txt`.
+**Language:** pick it in **Preferences → Dictation → "Taal"** (Dutch, English, German,
+French, Spanish, Italian, Portuguese, or *Automatisch* — Whisper detects per dictation).
+Stored as `language` in `settings.json`; it takes effect on the next dictation, no restart
+and no `install.sh` re-run. The setting travels through the whole pipeline: Whisper gets it
+as the decode language, `cleanup.py` picks that language's spoken commands and list markers
+(`LANGS`), and `polish.py` names the language in its prompt. Put terms in your language in
+`lexicon.txt`.
 
 **Dictation length:** one dictation may run up to **5 minutes** by default; anything past
 that is cut off. Change it in **Preferences → Dictation → "Maximale lengte"** (1 / 2 / 5 /

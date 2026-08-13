@@ -57,8 +57,13 @@ APP_PATH = os.path.expanduser("~/Applications/SamFlow.app")
 _PRIVACY_PANE = "x-apple.systempreferences:com.apple.preference.security?Privacy_"
 _KEYBOARD_PANE = "x-apple.systempreferences:com.apple.preference.keyboard"
 
-LANG_LABELS = ["Nederlands", "English", "Automatisch"]
-LANG_CODES = ["nl", "en", "auto"]
+# De talen die je kunt dicteren. Whisper kent er veel meer; deze lijst is de kruising met
+# wat cleanup.LANGS aan regels heeft (commando's, opsommingen, het label in de Whisper-
+# prompt). Een taal toevoegen = een regel hier én een profiel in cleanup.py -- zonder
+# profiel werkt dicteren wél, maar valt die taal terug op de gedeelde regels.
+LANG_LABELS = ["Nederlands", "English", "Deutsch", "Français", "Español", "Italiano",
+               "Português", "Automatisch"]
+LANG_CODES = ["nl", "en", "de", "fr", "es", "it", "pt", "auto"]
 
 LOCK_LABELS = ["Uit", "Tik", "Dubbel-tik", "Fn+⌘"]
 LOCK_CODES = ["off", "tap", "double", "chord"]
@@ -492,8 +497,8 @@ class PrefsController(NSObject):
 
         y = _glabel(v, PAD, y, iw, "Dicteren")
         y = self._group(v, y, [
-            self._grp_seg("Taal", None, LANG_LABELS, LANG_CODES, "language",
-                          "changeLanguage:"),
+            self._grp_drop("Taal", "Wat je spreekt — “Automatisch” laat Whisper kiezen",
+                           LANG_LABELS, LANG_CODES, "language", "changeLanguage:"),
             self._grp_static("Model", "Binnenkort instelbaar", "Turbo — snel"),
             self._grp_keycap("Sneltoets", "Ingedrukt houden = opnemen", "fn"),
             self._grp_drop("Vastzetten", "Zodat je Fn niet hoeft vast te houden",

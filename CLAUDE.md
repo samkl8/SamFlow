@@ -12,7 +12,11 @@ model), `cleanup.py` (vocab-prompt + regels). Alles blijft op deze machine.
   dequantiseert simpeler op Metal) en kost ~+390 MB RAM. Beam search kost ~50 ms.
 - **Python:** de venv draait op een **door uv beheerde** 3.12, niet die van Homebrew.
   Zie "De TCC-val" in `README.md` — verander dit niet zonder die sectie te lezen.
-- **Taal:** `LANGUAGE = "nl"` in `samflow.py`.
+- **Taal:** een **instelling** (`language` in settings.json, default `"nl"`), niet een
+  constante. Hij gaat per dictaat naar whisper-server én stuurt `cleanup.LANGS` (commando's,
+  opsomming-markers, het label in de Whisper-prompt) en de prompt van `polish.py`. Voeg je
+  een taal toe aan de dropdown in `prefs.py`, geef 'm dan ook een profiel in `cleanup.py` —
+  zonder profiel dicteer je prima, maar val je terug op de gedeelde regels.
 
 ## Werkwijze bij een gemiste transcriptie
 Dit is de onderhoudslus van het project. Hoor je een woord dat er verkeerd uitkomt:
@@ -47,6 +51,17 @@ Dit is de onderhoudslus van het project. Hoor je een woord dat er verkeerd uitko
   hele discriminator. Verifieer met een echte transcriptie voordat je dit aanraakt.
 - De `HALLUCINATIONS`-lijst mag alleen de **volledige** output afkeuren, nooit een deel ervan.
   `Ga naar example.com` moet blijven staan; kale `Www.Nil.Com.Br` niet.
+- **Taal-specifieke regels horen in `LANGS`, niet in de gedeelde regels.** Een profiel vult
+  alléén in wat we van die taal weten; wat het openlaat — en álles bij `"auto"` — valt terug
+  op de vereniging van alle profielen. Dat is bewust de conservatieve kant op: een ruimere
+  stotter-uitzonderingslijst laat juist méér staan, en commando's/markers zijn letterlijke
+  woorden die in een andere taal niet voorkomen. Elk voorbeeld in `EXAMPLES` draagt daarom
+  een taalcode, inclusief de negatieve gevallen ("nieuwe regel" mag níét vuren in een Engels
+  dictaat).
+- **Het label vóór de woordenlijst in `whisper_prompt()` staat in de dicteertaal.** De
+  initial prompt stuurt óók de taalkeuze van de decoder: "Woordenlijst:" vóór een Engels
+  dictaat duwt Whisper richting Nederlands. Bij `"auto"` gaat het label er daarom helemaal
+  af — een kale termenlijst stuurt de taal het minst.
 
 ## Regels bij het aanpassen van lexicon.py
 - **De corrector mag nóóit een woord buiten de lijst aanraken.** Dat is de hele belofte.
@@ -95,6 +110,16 @@ Dit is de onderhoudslus van het project. Hoor je een woord dat er verkeerd uitko
   (`_budget`). `_sane` accepteert tot ~1,6x de invoer, dus daar is `num_predict` op gedimen-
   sioneerd. De timeout heeft wél een plafond (`_TIMEOUT_MAX`): een dictaat dat pas na een
   minuut geplakt wordt is erger dan een dictaat zonder oppoetsen.
+- **Een vertaling heeft een prima lengte — `_sane` ziet 'm dus niet.** Toen de taal
+  instelbaar werd, kwam een Engels dictaat er als Nederlandse vertaling uit en die glipte
+  moeiteloos langs de lengtecheck. Daarom `_kept_ratio`: welk deel van de inhoudswoorden
+  (≥4 letters, vergeleken op de eerste vijf) de opgepoetste tekst haalt. Gemeten: 1,00 bij
+  een echte polish (NL én EN), 0,07 bij een vertaling. Drempel 0,5. Sloop die check niet
+  weg als je aan de prompt werkt — hij is de enige die betekenis-drift ziet.
+- **Noem de taal expliciet in de prompt zodra we 'm weten.** "Schrijf je antwoord in het
+  Duits" haalde 0,91 woordbehoud waar "in dezelfde taal als de invoer" op 0,18 bleef (de
+  Nederlandse few-shot trekt hard). Alleen bij `"auto"` blijft de dezelfde-taal-regel over;
+  die houdt Engels wél vast (1,00). De few-shot mag Nederlands blijven — gemeten.
 - Test een wijziging hier nooit met herhaalde audio. Een model dat drie identieke alinea's
   terecht samenvat, valt op `_sane` terug en dat lijkt dan een bug in je wijziging.
 

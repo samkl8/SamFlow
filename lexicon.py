@@ -73,7 +73,14 @@ STOPWORDS = {
     "mag", "laat", "laten", "maak", "maken", "zet", "zetten", "check", "dan",
     "nu", "al", "geen", "veel", "weer", "zo", "toch", "over", "onder", "tot",
     "door", "bij", "uit", "af", "tegen", "tussen", "zonder", "omdat", "terwijl",
+    # Engels erbij sinds de dicteertaal instelbaar is: dicteer je Engels, dan stelde de
+    # leer-loop anders "have", "should" en "because" als nieuwe termen voor.
     "the", "and", "to", "of", "it", "for", "with", "this", "that",
+    "you", "are", "was", "were", "have", "has", "had", "will", "would", "should",
+    "can", "could", "but", "not", "they", "them", "there", "their", "what", "when",
+    "where", "which", "about", "from", "just", "like", "make", "made", "want",
+    "need", "know", "think", "because", "then", "than", "some", "more", "most",
+    "very", "also", "into", "out", "over", "our", "your", "his", "her", "its",
 }
 
 # ---------- lezen, met mtime-cache zodat edits meteen tellen ----------
