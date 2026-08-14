@@ -3,6 +3,114 @@
 _Doel: na een `/clear` of in een nieuwe sessie meteen verder kunnen. Wat er staat, de
 staat van de code, openstaande draden en hoe je de app bedient._
 
+**Laatste update (13-14 augustus 2026) — de vastloper gevónden, meertalig dicteren en een
+Engelse interface. Alles staat op `main` (merge-commit `c9937f2`), dus dit is released:
+de app werkt zichzelf ff-only bij vanaf main.**
+
+**A. De vastloper — het was geen CoreAudio, het was een `stat()` per frame.**
+
+De vorige sessie gokte op onbegrensde C-calls (mic openen, Apple Events). Die fixes waren
+terecht, maar niet de dagelijkse vastloper. Wat wél hielp: `stall.py` schiet nu ook een
+**native** stack via `/usr/bin/sample` (de Python-stack stopte telkens bij `app.run()`, want
+er liep op dat moment geen Python — dan zegt zo'n dump niets). Dat sloot eerst alles uit:
+geen mutex, geen Apple Event, geen modale run loop, en de andere threads sliepen in
+`nanosleep`, dus ook geen GIL-verstopping.
+
+De vangst kwam uit de Python-dump zélf, die één keer wél gevuld was:
+
+```
+hud.py:435  tick_ → hud.py:774 _on_tick → settings.get("show_pill")
+settings.py _load → genericpath getmtime
+! main thread weer vrij na 6.2s
+```
+
+De 60 fps-pill-tik deed **elke frame** een `stat()`-syscall op `settings.json`, op de main
+thread. Normaal microseconden; hikt het bestandssysteem één keer, dan ligt de hele app stil.
+Twee lagen fix: de lookup staat nu achter `state != "idle"` (een idle app raakt het
+bestandssysteem niet aan) en `settings._load()` doet die stat hooguit 5x/sec (`RECHECK_SEC`).
+Gemeten: 100.000 `settings.get()`-aanroepen kosten nu 13 ms. Regel staat in CLAUDE.md.
+
+Ook mee: `prefs._login_item_present()` vroeg System Events op de main thread naar de
+login-item-status (osascript, 3s timeout, lánceert System Events als die niet draait) — bij
+elke klik op de Instellingen-tab én elke reflow tijdens een resize. Nu een werkthread met
+cache; de schakelaar corrigeert zichzelf zodra het antwoord er is.
+
+**B. "Er kwamen Chinese tekens uit" — het oppoets-model, niet Whisper.**
+
+Echt gebeurd: `Oké, kun je me甚至 帮助 我 補正這件事？`. Dat is een woord-voor-woord vertaling
+van de Nederlandse zin (甚至 = "even", 帮助 = "helpen"), die halverwege begint — qwen2.5:3b is
+Chinees getraind en kiept om. whisper-server is vrijgepleit met synthetische spraak (`say` →
+ffmpeg → server): vier varianten (met/zonder woordenlijst-prompt, met/zonder taal) gaven
+allemaal keurig Nederlands. `_script_drift` weigert nu elke polish die een schrift introduceert
+dat het dictaat niet had; dat staat náást `_kept_ratio`, want bij een lang dictaat waarvan
+alléén de staart omkiept blijft het woordbehoud gewoon 1,00.
+
+**C. Meertalig dicteren (7 talen + automatisch).**
+
+De taal-instelling bestond al en ging naar whisper-server; alles eróm was impliciet Nederlands.
+Nu doorgetrokken: `cleanup.LANGS` (commando's, opsomming-markers, stotter-uitzonderingen per
+taal; een profiel vult alléén in wat we van die taal weten, de rest valt terug op de vereniging
+— conservatief), het label vóór de woordenlijst in `whisper_prompt()` staat in de dicteertaal
+(bij "auto" gaat het label eraf: "Woordenlijst:" duwt een Engels dictaat richting Nederlands),
+en `polish.py` noemt de taal expliciet. Gemeten met qwen2.5:3b op een Duits dictaat:
+"in dezelfde taal als de invoer" gaf 0,18 woordbehoud, "in het Duits" 0,91. De Nederlandse
+few-shot mocht blijven staan. `_kept_ratio` is de vangrail die vertalingen tegenhoudt
+(1,00 bij een echte polish, 0,07 bij een vertaling; drempel 0,5).
+
+**D. Engelse interface (`i18n.py`, NIEUW).**
+
+Nederlandse tekst in de code is de sleutel; vertaald wordt er in de **sinks** (`ui.label`,
+`section`, `row_label`, `glabel`, `mono`, de labels van Segmented/Dropdown) plus de plekken die
+rechtstreeks met AppKit praten. Tien plekken in plaats van tweehonderd, en een gemiste vertaling
+is één Nederlandse regel tussen het Engels. `ui_language` = `auto` (volgt de Mac) | `nl` | `en`;
+auto is de default, dus een Nederlandse Mac merkt niets en een Engelse krijgt vanzelf Engels.
+Datums, weekdagen en dagdelen hebben eigen lijsten per taal in `mainwindow.py`.
+**Geverifieerd door de views écht te renderen** (headless: `build_view()` + `_tab_view(0..3)` +
+de wizard): 13.433 teksten, nul Nederlands, en in de NL-stand nul per ongeluk Engels. Die test
+ving meteen een crash — één achtergebleven `_DAYS_NL`-verwijzing sloopte het dashboard.
+`python i18n.py` is de statische helft van diezelfde controle.
+
+**E. Kleine dingen die bij het nakijken bovenkwamen.**
+
+- **Regressie van mezelf:** `install.sh` las de dicteertaal uit `LANGUAGE` in `samflow.py` —
+  precies de dode constante die deze sessie weg is. Viel stil terug op `en` en zette `-l en` in
+  de server-plist (runtime ongevaarlijk, want elk dictaat stuurt z'n eigen taal mee). Leest nu
+  `settings.py`. Stap (c) van de handleiding verwees ook nog naar `VOCAB` in cleanup.py.
+- Twee wizard-teksten waren onvertaald gebleven omdat mijn eerste verificatie het
+  welkomstvenster niet rendeerde.
+- README: de download-instructie stond nog op `git clone <this-repo>`; nu de echte URL, plus
+  een gemeten geheugen-tabel (~120 MB whisper-server, ~125 MB samflow.py, ~2,5 GB ollama
+  alléén met oppoetsen aan; het model is memory-mapped, dus geen 834 MB app-geheugen).
+
+**F. Git: de bedrijfsnaam is uit de historie.**
+
+Op verzoek "Kloeth Digital B.V." overal vervangen door "Sam Kloeth" (zijbalk, LICENSE,
+Info.plist) én uit de hele historie herschreven met `git filter-repo --replace-text`, daarna
+force-push van alle 7 branches. De commit die de credit veranderde werd daardoor leeg en is
+gepruned: het lijkt nu alsof er altijd "Sam Kloeth" stond. **Voorbehoud, geverifieerd:** GitHub
+ruimt losgekoppelde commits niet meteen op — de oude blob is nog op te halen via een directe
+SHA-link, en PR #9/#10 verwijzen nog naar oude SHA's. Wil je dat óók dicht: GitHub Support om
+een gc vragen, of de repo weggooien en opnieuw pushen. Backup van de oude historie stond in de
+scratchpad van die sessie (`samflow-voor-rewrite.bundle`) — die is weg na een reboot.
+
+**Openstaande draden:**
+
+- `macos/design/hosted-versie-plan.md` staat **bewust untracked**: prijsstelling, omzet en de
+  belastingkant horen niet in een publieke repo.
+- Reddit-post over SamFlow ligt klaar in derde persoon mét disclosure-regel. Sam vroeg om een
+  versie die klinkt als een willekeurige gebruiker die de app "gevonden" heeft; dat is
+  geweigerd (nepaanbeveling van je eigen project). Alternatief genoemd: r/opensource of
+  r/SideProject, waar "I built this" gewoon het format is.
+- Grootste gat richting vreemden blijft **distributie**: installeren is `git clone` +
+  `./install.sh`, er is geen gesigneerde DMG. Ter vergelijking uitgezocht:
+  [SpeakType](https://github.com/karansinghgit/speaktype) (Swift + WhisperKit, 393 sterren) doet
+  dat wél, en verdient via **Polar.sh** met 14 dagen proef, daarna 10 dictaten/dag en woordenlijst
+  + export achter Pro. Relevant voor het hosted-plan: Polar is een derde optie naast Lemon
+  Squeezy en Stripe. Hun zwakke plek is juist onze sterke: 30-60s koude start bij het eerste
+  model, en hun woordenlijst is een platte zoek-vervang ná de transcriptie.
+- `history.top_words()` leest bij elke reflow de hele `history.jsonl` opnieuw, terwijl de rest
+  van dat pad een mtime-cache heeft. Nu 292 kB, dus geen probleem — het groeit wel mee.
+
 **Laatste update (11 augustus 2026) — lange dictaten & de vastlopers (branch
 `fix/lange-dictaten-en-vastlopers`, 6 commits, gepusht, PR nog te openen):**
 
