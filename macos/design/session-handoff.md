@@ -3,6 +3,72 @@
 _Doel: na een `/clear` of in een nieuwe sessie meteen verder kunnen. Wat er staat, de
 staat van de code, openstaande draden en hoe je de app bedient._
 
+**Laatste update (18 augustus 2026) — achtergrondgeluid (radio) uit de transcriptie.
+Commit `0db6898` op `main`, lokaal, nog niet gepusht.**
+
+Vraag uit gebruik: "kunnen we iets maken dat als de radio aan staat dit geluid weggefilterd
+wordt?" Fysieke radio in de kamer, drie symptomen: de radio werd meegetranscribeerd, eigen
+woorden kwamen verkeerd uit, en er kwam onzin bij stukken waar niet gesproken werd.
+
+**A. De fix zit in de server, niet in het filteren: `--vad`.**
+
+whisper-server draait nu met spraakdetectie (`--vad -vm models/ggml-silero-v5.1.2.bin`,
+865 kB, in `install.sh` erbij). Geen spraaksegment → geen transcriptie. Gemeten op de echte
+opnamen: radio-aan-en-zwijgen levert **niets** (0,05s) waar het eerst tekst plakte; een dictaat
+mét radio komt er onveranderd uit (0,79s); stille kamer onveranderd (0,68s). Kost **+0,08s**
+op een echt dictaat en scheelt **1,3s** op puur achtergrondgeluid (0,03s i.p.v. 1,37s — het
+model draait dan helemaal niet).
+
+Waarom niet de `HALLUCINATIONS`-lijst: **het is geen vaste string.** Dezelfde zes seconden
+radio gaven drie keer een ánder verzinsel — `*repeat*`, `Gov. Gov. Gov. Gov.`, `Tja, Tja, Tja`.
+(De server draait met `--carry-initial-prompt`, dus de uitkomst hangt af van wat er daarvóór
+doorheen ging.) Die lijst blijft een vangnet en heeft `*repeat*` erbij gekregen — Whisper's
+sterretjes-notatie voor niet-spraak, naast de al bestaande `[BLANK_AUDIO]` en `(...)` — met een
+voorbeeld dat 'm afdwingt én een negatief voorbeeld (`*echt* nu, en *meteen*` moet blijven
+staan; daarom `^\*[^*]*\*$` en niet `.*`).
+
+**B. Twee routes gemeten en afgevallen. Staan in CLAUDE.md; niet opnieuw proberen.**
+
+- **Apple's voice processing** (`AVAudioInputNode.setVoiceProcessingEnabled`) werkt technisch
+  prima vanuit PyObjC, en de cijfers zien er prachtig uit: ruisvloer 5x omlaag, SNR van 8,2x
+  naar 22,3x, en een toon uit de eigen speakers verdwijnt volledig (13,4x → 0,85x — de
+  echo-onderdrukking is compleet). **En de transcriptie wordt er slechter van.** Dezelfde zin,
+  dezelfde radio: ruw `"...of je mij alsnog goed hoort met de radio aan"`, met voice processing
+  `"...of je meisje kan doen of je kan doen of je kan doen"` — een decoder in een herhaallus.
+  Whisper is op ruizige audio getraind; de artefacten van een ruisonderdrukker verwarren 'm
+  méér dan de ruis zelf. Het zou bovendien het mic-pad van sounddevice naar AVAudioEngine
+  dwingen, precies de code met alle HAL-mutex-regels.
+  Praktisch, mocht iemand het tóch ooit nodig hebben: `setVoiceProcessingEnabled` maakt van de
+  input-node een 9-kanaals `DiscreteInOrder`-formaat, maar PyObjC geeft voor **elke**
+  kanaalindex dezelfde pointer terug (alleen kanaal 0 is echt, en dat is de verwerkte mono-mic),
+  en `as_buffer()` telt in floats, niet in bytes. Een mixer-node ertussen hangen werkt niet:
+  met VP aan is het één gecombineerde I/O-unit en faalt `kAUInitialize` met `-10875`.
+- **Een SNR-poort** (luidste 100ms-venster t.o.v. de ruisvloer) in plaats van de absolute
+  `SILENCE_RMS`. Klinkt logisch, meet niet wat je denkt. Met dezelfde spraak en oplopend
+  radiovolume erdoorheen gemengd: Whisper transcribeerde nog **perfect** bij SNR 3,9x, 3,1x en
+  3,6x, en ging pas kapot bij 3,7x. **De SNR voorspelt niet of Whisper het redt**, dus zo'n
+  poort gooit goede dictaten weg — precies wat "tekst kwijtraken mag nooit stil gebeuren"
+  verbiedt.
+
+**C. Wat er níét verandert.** In een stille kamer raakt VAD niets aan, ook niet bij 30% volume
+(luidste 141, transcriptie goed). Wat daaronder stopt is de **bestaande** energie-poort
+(`SILENCE_RMS = 120`, stopt bij 20% volume / luidste 94), onveranderd. Korte dictaten vallen
+niet weg: nagemeten op fragmenten van 0,4–2,0s, identiek aan zonder VAD.
+
+**Openstaande draden:**
+
+- **De knop bij zacht praten is `--vad-threshold`** (nu de default 0,50). Fluisteren of een mic
+  verder weg heb ik niet écht kunnen meten — alleen gesimuleerd door de opname zachter te
+  draaien, en dan zakt de kamerruis mee terwijl die in het echt blijft staan. Komt een zacht
+  dictaat er ooit niet uit: eerst de opname bewaren, dán aan die drempel draaien.
+- **Foutcue bij een leeg resultaat, bewust niet gebouwd.** Bij een écht harde radio (16x in de
+  test) levert VAD leeg op in plaats van onzin — beter, maar stil: het uitblijven van de
+  "klaar"-cue is nu het enige signaal. Een expliciete foutcue zou ook piepen bij elke onbedoelde
+  Fn-druk met de radio aan. Sam moest dat in de praktijk eerst voelen; nog niet besloten.
+- **Deze machine draait nog op de oude `com.sam.samflow-server`** (symlink naar het
+  gitignorede `launchd/`), niet op de `com.samflow.server` die `install.sh` genereert. Beide
+  zijn bijgewerkt, maar wie hier iets aan de server-vlaggen verandert moet ze **allebei** raken.
+
 **Laatste update (13-14 augustus 2026) — de vastloper gevónden, meertalig dicteren en een
 Engelse interface. Alles staat op `main` (merge-commit `c9937f2`), dus dit is released:
 de app werkt zichzelf ff-only bij vanaf main.**
