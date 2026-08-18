@@ -55,6 +55,12 @@ HALLUCINATIONS = [
     r"^\W*$",                        # nothing but punctuation
     r"^\[.*\]$",                     # [BLANK_AUDIO], [Muziek]
     r"^\(.*\)$",
+    # Whisper's derde notatie voor niet-spraak: *repeat*, *music*, *applause*. Gemeten
+    # met een radio aan en een zwijgende spreker -- de energie-poort liet die 6 seconden
+    # door (luidste 100ms RMS 162, boven SILENCE_RMS 120) en '*repeat*' werd geplakt.
+    # Bewust [^*] en niet .*: '*echt* nu, en *meteen*' begint én eindigt op een ster,
+    # maar is gewone tekst met nadruk. Alleen één ononderbroken sterretjes-blok telt.
+    r"^\*[^*]*\*$",
     r"^(?:www\.|https?://)",         # a bare URL and nothing else
     r"^[\w\-]+(?:\.[\w\-]+){2,}$",   # a.b.c domain and nothing else
 ]
@@ -291,6 +297,8 @@ EXAMPLES = [
     ("nl", " Dit is een test van de git\nhub repo.\n"),          # in-word break
     ("nl", " Eerste zin over de deploy.\n Ik ga naar huis.\n"),  # segment boundary
     ("nl", "[BLANK_AUDIO]"),
+    ("nl", "*repeat*"),                                          # radio zonder spraak, echt gemeten
+    ("nl", "*echt* nu, en *meteen*"),                            # GEEN hallucinatie: nadruk is tekst
     ("nl", "Ondertiteld door de Amara.org gemeenschap"),
     ("nl", "Www.Nil.Com.Br"),
     ("nl", "ga naar example.com en check versie 3.5. daarna pushen"),

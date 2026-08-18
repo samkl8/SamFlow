@@ -13,6 +13,10 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOME_DIR="$HOME"
 MODEL_URL="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q8_0.bin"
 MODEL="$DIR/models/ggml-large-v3-turbo-q8_0.bin"
+# Spraakdetectie-model. Klein (865 kB) maar niet optioneel: zonder VAD stuurt de server
+# ook puur achtergrondgeluid door het model heen, en dat verzint er dan tekst bij.
+VAD_URL="https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin"
+VAD_MODEL="$DIR/models/ggml-silero-v5.1.2.bin"
 APP="$HOME/Applications/SamFlow.app"
 LAUNCHD="$HOME/Library/LaunchAgents/com.samflow.server.plist"
 
@@ -44,6 +48,13 @@ if [ -f "$MODEL" ]; then
   echo "    al aanwezig ✓"
 else
   curl -L --progress-bar -o "$MODEL.part" "$MODEL_URL" && mv "$MODEL.part" "$MODEL"
+fi
+
+if [ -f "$VAD_MODEL" ]; then
+  echo "    VAD-model al aanwezig ✓"
+else
+  say "    VAD-model (Silero, ~865 kB)"
+  curl -L --progress-bar -o "$VAD_MODEL.part" "$VAD_URL" && mv "$VAD_MODEL.part" "$VAD_MODEL"
 fi
 
 # --------------------------------------------------------------------- python

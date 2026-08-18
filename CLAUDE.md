@@ -10,6 +10,16 @@ model), `cleanup.py` (vocab-prompt + regels). Alles blijft op deze machine.
   `127.0.0.1:8181` met beam search (`-bs 5`). Warm houden is niet optioneel: koud kost een
   dictaat 11s, warm 0,5s. Gemeten: q8 i.p.v. q5 is strikt preciezer, níét trager (q8_0
   dequantiseert simpeler op Metal) en kost ~+390 MB RAM. Beam search kost ~50 ms.
+- **VAD staat aan** (`--vad -vm models/ggml-silero-v5.1.2.bin`, ~865 kB). Zonder
+  spraakdetectie gaat achtergrondgeluid gewoon het model in en vérzint dat er tekst bij.
+  Gemeten met een radio aan en een zwijgende spreker: dezelfde 6 seconden gaven drie keer
+  een ánder verzinsel (`*repeat*`, `Gov. Gov. Gov.`, `Tja, Tja, Tja`). De
+  `HALLUCINATIONS`-lijst wint dat nooit — het is geen vaste string, dus die lijst blijft
+  een vangnet en is niet de oplossing. VAD lost het bij de bron op: geen spraaksegment,
+  geen transcriptie. Kost +0,08s op een echt dictaat en scheelt 1,3s op puur
+  achtergrondgeluid (0,03s i.p.v. 1,37s — het model draait dan helemaal niet). Dictaten
+  mét radio op de achtergrond komen er onveranderd uit; korte dictaten vallen niet weg
+  (nagemeten op 0,4–2,0s fragmenten). Het model hoort in `install.sh`, naast het grote.
 - **Python:** de venv draait op een **door uv beheerde** 3.12, niet die van Homebrew.
   Zie "De TCC-val" in `README.md` — verander dit niet zonder die sectie te lezen.
 - **Taal:** een **instelling** (`language` in settings.json, default `"nl"`), niet een
@@ -17,6 +27,26 @@ model), `cleanup.py` (vocab-prompt + regels). Alles blijft op deze machine.
   opsomming-markers, het label in de Whisper-prompt) en de prompt van `polish.py`. Voeg je
   een taal toe aan de dropdown in `prefs.py`, geef 'm dan ook een profiel in `cleanup.py` —
   zonder profiel dicteer je prima, maar val je terug op de gedeelde regels.
+
+## Wat we bij achtergrondgeluid NIET moeten doen
+Twee routes zijn gemeten en afgevallen. Probeer ze niet opnieuw zonder nieuwe metingen.
+
+- **Apple's voice processing** (`AVAudioInputNode.setVoiceProcessingEnabled`) werkt
+  technisch prima vanuit PyObjC en de cijfers zien er prachtig uit: de ruisvloer zakt 5x,
+  de SNR gaat van 8,2x naar 22,3x, en een toon uit de eigen speakers verdwijnt volledig
+  (13,4x → 0,85x, dus de echo-onderdrukking is compleet). **En de transcriptie wordt er
+  slechter van.** Dezelfde zin met dezelfde radio: ruw `"...of je mij alsnog goed hoort
+  met de radio aan"`, met voice processing `"...of je meisje kan doen of je kan doen of
+  je kan doen"` — een decoder die in een herhaallus valt. Whisper is getraind op ruizige
+  audio; de artefacten van een ruisonderdrukker verwarren 'm méér dan de ruis zelf. Het
+  zou bovendien het mic-pad van sounddevice naar AVAudioEngine dwingen, precies de code
+  met alle HAL-mutex-regels hieronder. Niet doen.
+- **Een SNR-poort** (luidste venster t.o.v. de ruisvloer) in plaats van de absolute
+  `SILENCE_RMS`. Klinkt logisch, meet niet wat je denkt: met dezelfde spraak en oplopend
+  radiovolume transcribeerde Whisper nog perfect bij SNR 3,1x en 3,6x, terwijl het pas
+  kapotging bij 3,7x. **De SNR voorspelt niet of Whisper het redt**, dus zo'n poort gooit
+  goede dictaten weg — precies wat "tekst kwijtraken mag nooit stil gebeuren" verbiedt.
+  Spraakdetectie (VAD, in de server) is hier het juiste gereedschap, geen energie-drempel.
 
 ## Werkwijze bij een gemiste transcriptie
 Dit is de onderhoudslus van het project. Hoor je een woord dat er verkeerd uitkomt:

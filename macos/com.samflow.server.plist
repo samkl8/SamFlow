@@ -25,6 +25,18 @@
         <string>5</string>
         <!-- woordenlijst de hele opname blijven meesturen, niet alleen het begin -->
         <string>--carry-initial-prompt</string>
+        <!-- Spraakdetectie vóór de transcriptie. Zonder dit gaat achtergrondgeluid
+             (radio, muziek) gewoon naar het model, en dat vérzint er dan tekst bij:
+             gemeten met een radio aan en een zwijgende spreker gaf dezelfde 6 seconden
+             drie keer een ánder verzinsel ('*repeat*', 'Gov. Gov. Gov.', 'Tja, Tja').
+             De hallucinatie-lijst in cleanup.py wint dat nooit -- het is geen vaste
+             string. VAD lost het bij de bron op: geen spraaksegment, geen transcriptie.
+             Kost +0,08s op een echt dictaat en scheelt 1,3s op puur achtergrondgeluid
+             (0,03s i.p.v. 1,37s, want het model draait dan helemaal niet). Gemeten:
+             dictaten mét radio op de achtergrond komen er onveranderd uit. -->
+        <string>--vad</string>
+        <string>-vm</string>
+        <string>@@SAMFLOW_DIR@@/models/ggml-silero-v5.1.2.bin</string>
     </array>
 
     <key>RunAtLoad</key>
