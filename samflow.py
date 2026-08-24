@@ -88,10 +88,21 @@ MIN_SPEECH_SEC = 0.35      # shorter than this is a stray Fn tap, not speech
 OPEN_WAIT_SEC = 0.25       # zo lang mag de Fn-callback op een koude mic wachten. Openen
                            # kost gezond 70-110 ms; hierboven is CoreAudio in de knoop en
                            # laten we de main thread los i.p.v. de app te laten bevriezen
+OPEN_RETRY_SEC = 3.0       # hangt een open-poging langer dan dit in CoreAudio, dan telt
+                           # 'ie als verloren en start de volgende Fn-druk een vérse
+                           # poging (afbreken kan niet: de thread zit in een C-call).
+                           # Zonder deze grens hield één blijvende HAL-hang de mic dood
+                           # tot een app-herstart -- zie _ensure_open
 MAX_SPEECH_SEC = 300       # terugval-plafond; de echte grens is instelbaar
                            # (settings 'max_speech_sec', 0 = onbeperkt) -- zie speech_cap()
 SILENCE_RMS = 120          # speech measures ~4000, a quiet room ~40. Below this we
                            # never call Whisper: fed silence, it invents sentences.
+DEAD_RMS = 1.0             # onder dit is het geen stille kamer maar digitale stilte:
+                           # een echte mic heeft altijd een ruisvloer (~40), exact nul
+                           # komt van een dode stream of een hardware-gemute mic
+HELD_NO_AUDIO_SEC = 1.0    # Fn minstens zo lang vast = een echt dictaat, geen tik.
+                           # Komt er dan (vrijwel) geen audio binnen, dan is dat een
+                           # mic-fout en klinkt de foutcue -- nooit een stil wegslikken
 SOUND_CUES = True
 SHOW_HUD = True            # floating pill + menu-bar dot, see hud.py
 HUD_FULL_SCALE = 3000.0    # mic RMS that drives the bars to full height
@@ -221,6 +232,10 @@ class Recorder:
         self.lock = threading.Lock()
         self.last_used = 0.0
         self._open_ev = None   # Event van een lopende open-poging; None = geen bezig
+        self._open_t = 0.0     # wanneer die poging begon; na OPEN_RETRY_SEC is 'ie verloren
+        self._zombies = 0      # opgegeven open-pogingen die nog in een CoreAudio-call
+                               # hangen; zolang dit > 0 is mag _open() PortAudio niet
+                               # her-initialiseren (zie daar)
         threading.Thread(target=self._reap_idle, daemon=True).start()
 
     def _callback(self, indata, frames, time_info, status):
@@ -249,15 +264,30 @@ class Recorder:
         `InputStream()/start()` is een AUHAL-call die de HAL-mutex pakt -- gezond 70-110 ms
         (gemeten), maar tijdens een apparaatwissel onbegrensd. Bleef die hangen, dan hing
         de hele app: geen Fn, geen pill, niets. Nu blokkeert hooguit een werkthread.
-        Eén open tegelijk: een tweede Fn-druk wacht op dezelfde poging in plaats van er
-        nog een CoreAudio-call bovenop te gooien."""
+
+        Eén open tegelijk -- met een houdbaarheidsdatum. Een tweede Fn-druk wacht op
+        dezelfde poging in plaats van er nog een CoreAudio-call bovenop te gooien. Maar
+        hangt die poging langer dan OPEN_RETRY_SEC (gezond is 70-110 ms), dan telt 'ie
+        als verloren: afbreken kan niet (de thread zit in een C-call), dus we laten 'm
+        als zombie hangen en starten een verse poging. Vroeger bleef élke volgende
+        Fn-druk op datzelfde dode event wachten -- één blijvende HAL-hang en de mic was
+        dood tot een app-herstart, terwijl de pill gewoon "opnemen" toonde. Maakt de
+        zombie z'n stream later alsnog af, dan hangt _open_worker die aan self.stream
+        of ruimt 'm als stale op; dat pad bestond al."""
         with self.lock:
             if self.stream is not None:
                 done = threading.Event()
                 done.set()
                 return done
+            if self._open_ev is not None and \
+                    time.monotonic() - self._open_t > OPEN_RETRY_SEC:
+                self._zombies += 1        # afgemeld in de finally van z'n eigen worker
+                self._open_ev = None
+                print(f"  ! mic-open hangt al {OPEN_RETRY_SEC:.0f}s in CoreAudio; "
+                      "poging opgegeven, nieuwe poging gestart")
             if self._open_ev is None:
                 self._open_ev = threading.Event()
+                self._open_t = time.monotonic()
                 threading.Thread(target=self._open_worker, args=(self._open_ev,),
                                  daemon=True).start()
             return self._open_ev
@@ -273,6 +303,10 @@ class Recorder:
             with self.lock:
                 if self._open_ev is ev:
                     self._open_ev = None
+                else:
+                    # Wij waren al opgegeven (of vervangen) door _ensure_open; meld de
+                    # zombie af zodat _open() weer mag her-initialiseren.
+                    self._zombies -= 1
                 if stream is not None:
                     if self.stream is None:
                         self.stream = stream
@@ -307,7 +341,15 @@ class Recorder:
         # niets op (de energie-poort verwerpt de stilte netjes) en probeert de volgende
         # Fn-druk opnieuw.
         try:
-            audiodev.refresh()
+            # De re-init alleen als er geen zombie-poging meer in CoreAudio hangt:
+            # sd._terminate() terwijl een andere thread in Pa_OpenStream/start
+            # geblokkeerd staat is vragen om een crash. Een retry-poging draait dan op
+            # de bevroren apparaatlijst -- het mindere kwaad: een misgekozen apparaat
+            # faalt snel en de volgende Fn-druk probeert het gewoon opnieuw.
+            with self.lock:
+                solo = self._zombies == 0
+            if solo:
+                audiodev.refresh()
             device, name, _ = audiodev.choose_input()
             stream = sd.InputStream(samplerate=SAMPLE_RATE, channels=1,
                                     dtype="int16", blocksize=BLOCK,
@@ -365,9 +407,18 @@ class Recorder:
         return np.concatenate(frames) if frames else np.zeros(0, dtype=np.int16)
 
 
-def handle(audio: np.ndarray, do_paste: bool = True, app: str = None):
+def handle(audio: np.ndarray, do_paste: bool = True, app: str = None,
+           held: float = None):
+    # `held` = hoe lang Fn echt vast zat (None bij --once). Nodig om een losse Fn-tik
+    # te onderscheiden van "je dicteerde seconden lang en de mic leverde níéts" --
+    # die twee eindigen allebei met (bijna) lege frames, maar alleen de eerste mag stil
+    # worden weggeslikt. Tekst kwijtraken mag nooit stil gebeuren.
     seconds = len(audio) / SAMPLE_RATE
     if seconds < MIN_SPEECH_SEC:
+        if held is not None and held >= HELD_NO_AUDIO_SEC:
+            cue("error")
+            print(f"  ! geen audio binnengekomen (Fn {held:.1f}s vast, {seconds:.2f}s "
+                  "audio) - de mic leverde niets; zie de regels hierboven in de log")
         hud_state("idle")
         return
     # Boven de cap knippen we de staart eraf -- maar nooit meer stilletjes. Wie tegen de
@@ -384,7 +435,15 @@ def handle(audio: np.ndarray, do_paste: bool = True, app: str = None):
 
     level = loudest_rms(audio)
     if level < SILENCE_RMS:
-        print(f"  ({seconds:.1f}s stilte, RMS {level:.0f} - niets verstuurd)")
+        if level < DEAD_RMS and seconds >= HELD_NO_AUDIO_SEC:
+            # Geen stille kamer maar digitale stilte: de stream liep, maar leverde
+            # exact nullen. Dat is een dood/verkeerd apparaat of een hardware-mute,
+            # geen zwijgende spreker -- dus hoorbaar maken, niet stil weggooien.
+            cue("error")
+            print(f"  ! {seconds:.1f}s digitale stilte (RMS {level:.1f}) - de mic "
+                  "levert nullen: dood of verkeerd apparaat, of hardware-mute")
+        else:
+            print(f"  ({seconds:.1f}s stilte, RMS {level:.0f} - niets verstuurd)")
         hud_state("idle")
         return
 
@@ -513,6 +572,9 @@ def run_daemon():
         rec.start(use_preroll=not paused)
 
     def end():
+        # press_t is de Fn-druk die dít dictaat startte (ook bij vastzetten: de
+        # stop-druk werkt press_t niet bij), dus dit is de echte opnameduur.
+        held = time.monotonic() - press_t
         hud_state("thinking")
         audio = rec.stop()
         if guard:
@@ -520,7 +582,8 @@ def run_daemon():
         # App-naam nú opvangen (main thread): dit is het venster waar geplakt wordt.
         # Alleen als historie aanstaat -- anders geen capture, geen werk.
         app = _frontmost_app() if settings.get("history_enabled") else None
-        threading.Thread(target=handle, args=(audio, True, app), daemon=True).start()
+        threading.Thread(target=handle, args=(audio, True, app, held),
+                         daemon=True).start()
 
     def cancel():
         # Esc tijdens opnemen: gooi het dictaat weg. Geen transcriptie, geen plakken,

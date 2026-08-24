@@ -170,6 +170,14 @@ Dit is de onderhoudslus van het project. Hoor je een woord dat er verkeerd uitko
   dictaat tegen die grens, dan klinkt de foutcue en zegt de log hoeveel seconden eraf gingen.
   Dat is de les van de oude harde `MAX_SPEECH_SEC = 120`: die knipte de staart eraf zonder
   één signaal, dus wie lang dicteerde dacht dat de app hem "niet goed opnam".
+  Dezelfde regel geldt voor een mic die níéts levert: het `MIN_SPEECH_SEC`-pad in
+  `handle()` mag alleen een échte losse Fn-tik stil wegslikken. Daarom krijgt `handle()`
+  de vasthoudduur mee (`held`): zat Fn ≥ `HELD_NO_AUDIO_SEC` vast maar kwam er (vrijwel)
+  geen audio binnen, dan klinkt de foutcue en zegt de log dat de mic niets leverde. En
+  binnen de stilte-poort onderscheidt `DEAD_RMS` digitale stilte (exact nullen: dood of
+  verkeerd apparaat, hardware-mute) van een stille kamer (~40) -- alleen de eerste geeft
+  een foutcue. Zo kwam de tester-bug "het opneem-icoon toont maar hij neemt niet op"
+  boven water: élke mic-faalroute eindigde geluidloos in "idle".
 - **De request-timeout naar whisper-server schaalt mee met de lengte** (halve realtime, met
   60s als bodem). Gemeten op een warme turbo: ~22x realtime, dus 5 minuten audio kost ~13s.
   Een vaste 60s was prima bij een cap van 2 minuten, maar zou een geslaagde lange
@@ -187,8 +195,16 @@ Dit is de onderhoudslus van het project. Hoor je een woord dat er verkeerd uitko
 - **`recording` gaat aan vóór het wachten op de mic**, niet erna. Zo landt elk blok dat
   binnenkomt meteen in `frames`, ook als de stream een fractie later pas leeft — anders
   verlies je bij een koude start de eerste woorden.
-- **Eén open-poging tegelijk** (`_open_ev`). Een tweede Fn-druk tijdens een hangende open
-  moet op diezelfde poging wachten, niet er nóg een CoreAudio-call bovenop gooien.
+- **Eén open-poging tegelijk** (`_open_ev`) **-- met een houdbaarheidsdatum**
+  (`OPEN_RETRY_SEC`). Een tweede Fn-druk tijdens een hangende open wacht op diezelfde
+  poging, niet er nóg een CoreAudio-call bovenop. Maar hangt de poging langer dan
+  `OPEN_RETRY_SEC` (gezond openen is 70-110 ms), dan is 'ie verloren: afbreken kan niet
+  (C-call), dus hij blijft als zombie hangen (`_zombies`-teller) en de volgende Fn-druk
+  start een verse poging. Vroeger wachtte élke druk eeuwig op datzelfde dode event: één
+  blijvende HAL-hang en de mic was dood tot een app-herstart, terwijl de pill "opnemen"
+  bleef tonen. Zolang `_zombies > 0` slaat `_open()` de `audiodev.refresh()` over --
+  `sd._terminate()` terwijl een zombie in `Pa_OpenStream` geblokkeerd staat is
+  crashgevaar; de bevroren apparaatlijst is dan het mindere kwaad.
 - **stdout/stderr staan op regel-buffering** (bovenaan het bestand). De app-bundle start ons
   via een shell die de uitvoer naar `~/Library/Logs/samflow.log` stuurt, en dan buffert Python
   per kilobyte: precies de regels vóór een vastloper waren wég zodra je de app afknalde. Elke
@@ -333,7 +349,10 @@ Dit is de onderhoudslus van het project. Hoor je een woord dat er verkeerd uitko
   altijd live (rechtstreeks CoreAudio); enkel de sounddevice-helft bevriest. `refresh()`
   (`sd._terminate()/_initialize()`, ~3 ms) mag alléén als er geen stream open staat — `_open()`
   is de juiste plek (self.stream is daar None); doe 't nooit op de status-/labelpaden
-  (`check()`, dashboard-mic-chip), want daar kan een opname-stream openstaan.
+  (`check()`, dashboard-mic-chip), want daar kan een opname-stream openstaan. En ook in
+  `_open()` alleen als er geen opgegeven open-poging meer in CoreAudio hangt
+  (`Recorder._zombies == 0`): `sd._terminate()` naast een thread die in `Pa_OpenStream`
+  geblokkeerd staat is crashgevaar, dus een retry-poging draait op de bevroren lijst.
 - Diagnose bij "muziek klinkt slecht": check eerst of er een oude samflow-instantie draait die
   de AirPods-mic vasthoudt (`pgrep -f samflow.py`). Een oude instantie met verouderde code was
   de echte oorzaak toen dit voor het eerst opdook.
