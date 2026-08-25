@@ -3,8 +3,61 @@
 _Doel: na een `/clear` of in een nieuwe sessie meteen verder kunnen. Wat er staat, de
 staat van de code, openstaande draden en hoe je de app bedient._
 
-**Laatste update (18 augustus 2026) — achtergrondgeluid (radio) uit de transcriptie.
-Commit `0db6898` op `main`, lokaal, nog niet gepusht.**
+**Laatste update (24 augustus 2026) — tester-bug "pill toont opnemen, maar hij neemt
+niet op". Commit `1ca5fc1`, gepusht naar `origin/main` (die push nam ook de eerder nog
+lokale VAD-commits t/m `f955350` mee — alles staat nu online, tester krijgt het via de
+in-app updater).**
+
+De tester (dezelfde als in juli) meldde: Fn vasthouden toont het opneem-icoon, maar er
+komt niets. Uitgezocht: **het icoon bewijst niets** — `hud_state("recording")` gaat in
+`begin()` aan op de Fn-stand, vóór er één audioblok binnen is — en élke manier waarop de
+mic kan falen eindigde geluidloos in "idle". Vier routes, waarvan drie stil: (1) de
+mic-open hángt (HAL-mutex bij apparaatwissel) en dat was **permanent** — `_ensure_open`
+gaf elke volgende Fn-druk hetzélfde dode event terug, dus mic dood tot app-herstart;
+(2) de open faalt met een fout → lege frames → het `MIN_SPEECH_SEC`-pad slikte dat weg
+als "losse tik", zonder cue en zonder logregel; (3) de stream levert nullen (dood/
+verkeerd apparaat, Continuity-mic, hardware-mute) → de stilte-poort gooide het stil weg;
+(4) whisper-server plat — de enige die wél Basso gaf. Welke route zíj had is nog open;
+haar log ging eraan beantwoorden (zie draden).
+
+**De fix (twee structurele gaten gedicht, beide onder "tekst kwijtraken mag nooit stil
+gebeuren"):**
+
+- `handle()` krijgt de vasthoudduur mee (`held`, gemeten vanaf de start-Fn-druk; klopt
+  ook bij vastzetten omdat de stop-druk `press_t` niet bijwerkt). Fn ≥ `HELD_NO_AUDIO_SEC`
+  (1s) vast maar < `MIN_SPEECH_SEC` audio → foutcue + logregel "geen audio binnengekomen".
+  Een losse tik en `--once` (`held=None`) blijven stil.
+- Nieuwe `DEAD_RMS` (1,0) in de stilte-poort: exact nullen is digitale stilte (dode
+  stream/mute) en krijgt een foutcue; een stille kamer (~40) blijft stil weggooien zoals
+  vanouds — anders piept elke onbedoelde Fn-druk.
+- `_ensure_open` heeft een houdbaarheidsdatum (`OPEN_RETRY_SEC`, 3s): een hangende
+  poging wordt als zombie opgegeven (`_zombies`-teller, afgemeld in de worker-finally) en
+  de volgende Fn-druk start vers. Zolang er een zombie in CoreAudio hangt slaat `_open()`
+  de `audiodev.refresh()` over — `sd._terminate()` naast een geblokkeerde `Pa_OpenStream`
+  is crashgevaar; de bevroren apparaatlijst is het mindere kwaad. Maakt de zombie z'n
+  stream later alsnog af, dan vangt het bestaande stale-opruimpad die op.
+
+Geverifieerd met een headless test (scratchpad, gestubde CoreAudio/lexicon/transcribe):
+alle vier de faalpaden cue'en precies dán, gezonde paden ongewijzigd, retry- en
+zombie-boekhouding klopt rond. CLAUDE.md-regels (tekst kwijtraken, één open-poging,
+refresh-regel bij audiodev) bijgewerkt. Uitgesloten als oorzaak: de VAD-release — de
+in-app updater raakt de server-plist en modellen van haar juli-installatie niet aan.
+
+**Openstaande draden hierbij:**
+
+- **Sams eigen app herstarten** (draaide tijdens de sessie nog op de oude code) en de
+  tester laten updaten + één dictaat laten doen.
+- **Haar log bekijken** (`~/Library/Logs/samflow.log`): de nieuwe regels benoemen de
+  route expliciet ("mic-open hangt al 3s", "mic openen mislukt", "digitale stilte",
+  "geen audio binnengekomen"). Snelle vragen die het veld al splitsen: bewegen de
+  balkjes in de pill, en lost een app-herstart het op (→ route 1)?
+- `HELD_NO_AUDIO_SEC`/`OPEN_RETRY_SEC` zijn beredeneerde eerste waarden (1s resp. 3s);
+  bij valse cues in de praktijk daar draaien, niet aan de poorten zelf.
+
+---
+
+**Eerder (18 augustus 2026) — achtergrondgeluid (radio) uit de transcriptie.
+Commit `0db6898` op `main` (inmiddels gepusht, zie boven).**
 
 Vraag uit gebruik: "kunnen we iets maken dat als de radio aan staat dit geluid weggefilterd
 wordt?" Fysieke radio in de kamer, drie symptomen: de radio werd meegetranscribeerd, eigen
