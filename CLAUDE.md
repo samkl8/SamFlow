@@ -2,8 +2,9 @@
 
 ## Wat dit project doet
 Fn ingedrukt houden neemt op, loslaten transcribeert lokaal en plakt de tekst in het actieve
-venster. Drie processen: `samflow.py` (Fn-tap + mic + plakken), `whisper-server` (het warme
-model), `cleanup.py` (vocab-prompt + regels). Alles blijft op deze machine.
+venster. Vier processen: `samflow.py` (Fn-tap + plakken), `mic_helper.py` (de microfoon, apart
+zodat een CoreAudio-vastloper de app niet meeneemt), `whisper-server` (het warme model),
+`cleanup.py` (vocab-prompt + regels). Alles blijft op deze machine.
 
 ## Vaste instellingen
 - **Model:** `models/ggml-large-v3-turbo-q8_0.bin`, bediend door `whisper-server` op
@@ -184,43 +185,87 @@ Dit is de onderhoudslus van het project. Hoor je een woord dat er verkeerd uitko
   transcriptie alsnog afbreken.
 - Blokkeer de CFRunLoop nooit. De Fn-callback moet meteen terugkeren; transcriberen gebeurt
   in een aparte thread. Doe je dat niet, dan mist de tap toetsaanslagen.
-- **Geen enkele call zonder bovengrens hoort op de main thread.** Dat is dezelfde thread als
-  de event-tap, de pill én het venster: blokkeert daar iets, dan is de app dood — geen Fn,
-  geen pill, niets, tot je 'm afknalt. `InputStream()/start()` was zo'n call: gezond 70-110 ms
-  (gemeten), maar tijdens een apparaatwissel wacht 'ie onbegrensd op de HAL-mutex. Daarom
-  opent de mic nu op een werkthread (`_ensure_open`/`_open_worker`) en wacht de Fn-callback
-  daar hooguit `OPEN_WAIT_SEC` op. Het normale geval is ongewijzigd (openen past ruim binnen
-  die deadline, en bij een warme stream raken we CoreAudio helemaal niet aan); het
-  pathologische geval kost je nu één dictaat in plaats van de hele app.
+- **Geen enkele call zonder bovengrens hoort op de main thread.** Dat is dezelfde thread
+  als de event-tap, de pill én het venster: blokkeert daar iets, dan is de app dood —
+  geen Fn, geen pill, niets, tot je 'm afknalt. `InputStream()/start()` was zo'n call
+  (gezond 70-110 ms, maar tijdens een apparaatwissel onbegrensd op de HAL-mutex); die
+  staat nu in een ander proces. De Fn-callback wacht nog hooguit `OPEN_WAIT_SEC` op een
+  Event, en bij een warme mic kost `start()` 0,004 ms (gemeten) omdat er dan helemaal
+  niets te wachten valt.
 - **`recording` gaat aan vóór het wachten op de mic**, niet erna. Zo landt elk blok dat
   binnenkomt meteen in `frames`, ook als de stream een fractie later pas leeft — anders
   verlies je bij een koude start de eerste woorden.
-- **Eén open-poging tegelijk** (`_open_ev`) **-- met een houdbaarheidsdatum**
-  (`OPEN_RETRY_SEC`). Een tweede Fn-druk tijdens een hangende open wacht op diezelfde
-  poging, niet er nóg een CoreAudio-call bovenop. Maar hangt de poging langer dan
-  `OPEN_RETRY_SEC` (gezond openen is 70-110 ms), dan is 'ie verloren: afbreken kan niet
-  (C-call), dus hij blijft als zombie hangen (`_zombies`-teller) en de volgende Fn-druk
-  start een verse poging. Vroeger wachtte élke druk eeuwig op datzelfde dode event: één
-  blijvende HAL-hang en de mic was dood tot een app-herstart, terwijl de pill "opnemen"
-  bleef tonen. Zolang `_zombies > 0` slaat `_open()` de `audiodev.refresh()` over --
-  `sd._terminate()` terwijl een zombie in `Pa_OpenStream` geblokkeerd staat is
-  crashgevaar; de bevroren apparaatlijst is dan het mindere kwaad.
+- **De microfoon zit in een kindproces, en dat is geen implementatiedetail.**
+  `mic_helper.py` is het énige dat PortAudio/CoreAudio aanraakt; `samflow.py` praat er
+  over een pipe mee. Reden: élk afbreek-pad van een PortAudio-stream (`stop`, `abort`,
+  `close`) takt af naar `AudioOutputUnitStop` — nagekeken in de binary, er is geen
+  uitzondering — en PortAudio hangt bij het openen ongeconditioneerd een listener op
+  `kAudioOutputUnitProperty_IsRunning` (`startStopCallback`, ook nagekeken: `w1=0x7d1`,
+  callback `0xaf90`) die vanuit CoreAudio's eigen IO-thread `AudioUnitGetProperty`
+  aanroept. Die twee raken in een lock-order-inversie: onze `stop()` houdt de
+  component-mutex en wil de HAL-mutex, de IO-thread andersom. Gemeten in een levend
+  proces, vier threads op die twee sloten, en niemand laat ooit los. Een thread die in
+  een C-call hangt kun je niet afbreken — in-proces was dat dus het definitieve einde
+  van de mic, terwijl de pill "opnemen" bleef tonen (de tester-bug). Een proces kún je
+  wél afschieten. **Zet PortAudio nooit terug in samflow.py.**
+- **`Recorder._supervise` is de herstellus, en die mag je niet uitkleden.** Elk commando
+  aan de helper (`open`/`close`) krijgt een deadline (`HELPER_DEADLINE`, 3s; gezond
+  openen is 70-136 ms gemeten mét warme helper). Blijft het antwoord uit, dan hangt de
+  helper in CoreAudio: SIGKILL en een verse starten (~320 ms). Getest door de helper met
+  `SIGSTOP` te bevriezen — dat is van buiten niet te onderscheiden van een CoreAudio-hang:
+  herstel in 3,2s, en bevroor 'ie middenin een opname dan liep het dictaat gewoon door
+  (de ouder heropent zelf, want `recording` stond nog aan). SIGKILL i.p.v. SIGTERM omdat
+  een helper die in CoreAudio hangt nergens meer aan toekomt; dát dit werkt is geen
+  aanname, het vastgelopen proces van 27-08 ging dood op een gewone kill mét die vier
+  geblokkeerde threads. `HELPER_RESPAWN_SEC` is de rem: mislukt het starten zélf, dan
+  zou de supervisor er vier per seconde proberen.
+- **Het generatienummer (`_gen`) is niet optioneel.** Een afgeschoten helper kan nog
+  frames in de pipe hebben staan. Zonder die check landt audio van een dode helper in
+  het dictaat dat er allang overheen is.
+- **De ouder blokkeert nergens op de helper, ook niet op de pipe.** Commando's gaan via
+  een wachtrij naar een schrijfthread, niet rechtstreeks: een pipe-schrijf kan wachten
+  als de helper niet meer leest, en de aanroeper is soms de Fn-callback op de main
+  thread. Het enige wat mag blokkeren is de lees-thread, en die is er speciaal voor.
 - **stdout/stderr staan op regel-buffering** (bovenaan het bestand). De app-bundle start ons
   via een shell die de uitvoer naar `~/Library/Logs/samflow.log` stuurt, en dan buffert Python
   per kilobyte: precies de regels vóór een vastloper waren wég zodra je de app afknalde. Elke
   vastloper wiste zo zijn eigen bewijs. Zet dit niet in de launcher — die zit in een ad-hoc
   gesigneerde bundle, en elke wijziging daar kost je de mic- en toetsenbordpermissies.
-- **Houd `Recorder.lock` nooit vast over een CoreAudio-call heen.** `stream.stop()/close()`
-  (en `.start()`) kunnen bij een apparaatwissel op de HAL-mutex blokkeren (AUHAL `err=-10851`).
-  Deed `_close()` dat vroeger mét de lock, dan blokkeerde de Fn-callback (main thread) op diezelfde
-  lock → de héle app bevroor (bewezen met een stack-sample: `AudioOutputUnitStop` → `HALB_Mutex::Lock`).
-  Daarom: ref eruit swappen ónder de lock, stop/close erbuiten. De lock beschermt alleen de
-  Python-staat (frames/preroll/stream-ref), nooit een blokkerende C-call.
-- **Een audio-fout mag de Fn-callback nooit als exceptie bereiken.** `_open()` vangt CoreAudio-
-  fouten af (mislukt openen = dit dictaat neemt niets op, volgende Fn-druk probeert opnieuw);
-  een geraiseerde fout in de listen-only event-tap zou 'm stilleggen.
+- **Houd `Recorder.lock` nooit vast over iets zonder bovengrens heen.** Hij beschermt
+  alléén de Python-staat (`frames`/`preroll`/`mic_open`). Deed `_close()` dit vroeger
+  mét de lock over een CoreAudio-call, dan blokkeerde de Fn-callback op diezelfde lock en
+  bevroor de héle app (bewezen met een stack-sample: `AudioOutputUnitStop` →
+  `HALB_Mutex::Lock`). Die calls zijn nu weg uit dit proces, maar de regel blijft: geen
+  pipe-schrijf, geen `proc.wait()`, geen subprocess-start onder de lock.
+- **Een mic-fout mag de Fn-callback nooit als exceptie bereiken.** Mislukt openen, dan
+  meldt de helper dat als `open_failed`, geeft de ouder het wacht-event alsnog vrij (dit
+  dictaat neemt niets op; `handle()` ziet de lege audio en geeft de foutcue) en probeert
+  de volgende Fn-druk het opnieuw. Een geraiseerde fout in de listen-only event-tap zou
+  'm stilleggen.
 - Concludeer nooit uit "de stream opende" dat de mic werkt. Een geweigerde microfoon levert
   op macOS nullen op, geen fout. Vraag AVFoundation.
+
+## Regels bij het aanpassen van mic_helper.py
+- **Dit proces mag vastlopen. Dat is het ontwerp, niet een tekortkoming.** De hele reden
+  dat het bestaat is dat een CoreAudio-deadlock ergens móét kunnen landen (zie de
+  samflow.py-sectie). Bouw hier dus geen eigen herstel-slimmigheid in: als een commando
+  niet beantwoord wordt, hóórt de ouder ons af te schieten. Een helper die zichzelf
+  probeert te redden verbergt precies het signaal waar de supervisor op wacht.
+- **Antwoord op élk commando, ook als er niets te doen valt.** `open` op een al open mic
+  stuurt gewoon `opened` terug, `close` zonder stream stuurt `closed`. Een commando
+  waarop geen status volgt is voor de ouder niet te onderscheiden van een vastloper, en
+  levert een onnodige herstart op.
+- **De audio-callback mag nooit blokkeren.** Dat is een realtime-thread; een pipe-schrijf
+  daarin geeft dropouts. Daarom gaat audio via een begrensde wachtrij naar een aparte
+  schrijfthread. Loopt die vol (ouder leest niet meer), dan gooien we het oudste blok weg
+  — geheugen laten vollopen is erger, en een ouder die niet leest is toch al stuk.
+- **EOF op stdin betekent: ouder weg, wij ook.** Zonder die regel blijft er bij elke
+  app-herstart een wees met de microfoon in handen achter — en dan klinkt je muziek
+  ineens slecht omdat een oud proces de AirPods-mic vasthoudt (dat is eerder gebeurd,
+  zie de audiodev-sectie).
+- **stdout is uitsluitend het frameprotocol.** Eén `print()` naar stdout erin en de
+  ouder leest onzin waar een frameheader hoorde te staan. Loggen gaat naar stderr; de
+  ouder zet dat met een prefix in de log.
 
 ## Regels bij het aanpassen van stall.py
 - De hartslag bestaat omdat een vastgelopen main thread niet zélf kan melden dat 'ie
@@ -347,12 +392,14 @@ Dit is de onderhoudslus van het project. Hoor je een woord dat er verkeerd uitko
   glipt (staat niet meer in de live CoreAudio-`transports()`) en als "gewone default"
   terugkomt → `InputStream(device=None)` opent het dode apparaat → stilte. `transports()` is wél
   altijd live (rechtstreeks CoreAudio); enkel de sounddevice-helft bevriest. `refresh()`
-  (`sd._terminate()/_initialize()`, ~3 ms) mag alléén als er geen stream open staat — `_open()`
-  is de juiste plek (self.stream is daar None); doe 't nooit op de status-/labelpaden
-  (`check()`, dashboard-mic-chip), want daar kan een opname-stream openstaan. En ook in
-  `_open()` alleen als er geen opgegeven open-poging meer in CoreAudio hangt
-  (`Recorder._zombies == 0`): `sd._terminate()` naast een thread die in `Pa_OpenStream`
-  geblokkeerd staat is crashgevaar, dus een retry-poging draait op de bevroren lijst.
+  (`sd._terminate()/_initialize()`, ~3 ms) mag alléén als er geen stream open staat, en
+  woont daarom in **`mic_helper.py`**, vlak vóór het openen. Dáár is 'ie ook ongevaarlijk
+  geworden: liep `sd._terminate()` vroeger een geblokkeerde CoreAudio-call in, dan zette
+  het PortAudio prócesbreed vast (élke `Pa_OpenStream` erna geblokkeerd) of het crashte;
+  nu kost het hooguit die helper, die de ouder afschiet en vervangt. **Roep `refresh()`
+  nooit aan vanuit samflow.py** — dat proces hoort helemaal geen PortAudio-streams te
+  kennen. Enumereren mag daar wél (`choose_input()` in `check()`): dat opent geen stream
+  en kan de deadlock dus niet raken.
 - Diagnose bij "muziek klinkt slecht": check eerst of er een oude samflow-instantie draait die
   de AirPods-mic vasthoudt (`pgrep -f samflow.py`). Een oude instantie met verouderde code was
   de echte oorzaak toen dit voor het eerst opdook.

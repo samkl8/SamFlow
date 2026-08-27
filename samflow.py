@@ -21,8 +21,11 @@ orange recording dot is not on all day.
 import argparse
 import collections
 import io
+import json
 import math
 import os
+import queue
+import struct
 import subprocess
 import sys
 import threading
@@ -44,7 +47,6 @@ for _stream in (sys.stdout, sys.stderr):
 
 import numpy as np
 import requests
-import sounddevice as sd
 from AppKit import (
     NSEvent, NSEventMaskKeyDown, NSPasteboard, NSPasteboardTypeString, NSWorkspace,
 )
@@ -88,11 +90,15 @@ MIN_SPEECH_SEC = 0.35      # shorter than this is a stray Fn tap, not speech
 OPEN_WAIT_SEC = 0.25       # zo lang mag de Fn-callback op een koude mic wachten. Openen
                            # kost gezond 70-110 ms; hierboven is CoreAudio in de knoop en
                            # laten we de main thread los i.p.v. de app te laten bevriezen
-OPEN_RETRY_SEC = 3.0       # hangt een open-poging langer dan dit in CoreAudio, dan telt
-                           # 'ie als verloren en start de volgende Fn-druk een vérse
-                           # poging (afbreken kan niet: de thread zit in een C-call).
-                           # Zonder deze grens hield één blijvende HAL-hang de mic dood
-                           # tot een app-herstart -- zie _ensure_open
+HELPER_DEADLINE = 3.0      # zo lang mag de mic-helper over een commando doen. Openen
+                           # kost ~104 ms en sluiten minder; blijft het antwoord hierna
+                           # uit, dan hangt 'ie in CoreAudio (de lock-order-inversie uit
+                           # mic_helper.py) en komt 'ie er nooit meer uit. Afschieten en
+                           # een verse starten is dan het enige wat helpt -- zie
+                           # Recorder._supervise
+HELPER_RESPAWN_SEC = 1.0   # minimale tijd tussen twee helper-starts. Lukt het starten
+                           # zélf niet, dan zou de supervisor er vier per seconde
+                           # proberen en de log volschrijven
 MAX_SPEECH_SEC = 300       # terugval-plafond; de echte grens is instelbaar
                            # (settings 'max_speech_sec', 0 = onbeperkt) -- zie speech_cap()
 SILENCE_RMS = 120          # speech measures ~4000, a quiet room ~40. Below this we
@@ -221,162 +227,287 @@ def paste(text: str):
     threading.Thread(target=restore, daemon=True).start()
 
 
+# Het frameformaat waarmee de mic-helper praat -- zie de kop van mic_helper.py.
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+HELPER_MAGIC = b"SF"
+HELPER_HEADER = struct.Struct("<2scI")     # magic, type, lengte
+
+
+def _read_exact(pipe, n: int):
+    """Lees precies n bytes, of None als de pipe dichtvalt. Een pipe-lees geeft je zomaar
+    minder dan je vroeg; een frame half inlezen zou de hele stroom uit de maat gooien."""
+    buf = bytearray()
+    while len(buf) < n:
+        try:
+            chunk = pipe.read(n - len(buf))
+        except Exception:
+            return None
+        if not chunk:
+            return None
+        buf.extend(chunk)
+    return bytes(buf)
+
+
 class Recorder:
-    """A mic stream that stays open between dictations and keeps a short pre-roll."""
+    """De microfoon, vastgehouden door een kindproces. Houdt een korte pre-roll tussen
+    dictaten door, precies als vroeger.
+
+    Waarom een kindproces -- zie de kop van mic_helper.py. Kort: élk afbreek-pad van een
+    PortAudio-stream loopt via `AudioOutputUnitStop`, en PortAudio hangt bij het openen
+    ongeconditioneerd een listener op die vanuit CoreAudio's eigen IO-thread terugbelt.
+    Die twee kunnen in een lock-order-inversie belanden waar geen van beide ooit uit
+    komt (gemeten: vier threads op twee sloten). Een thread die in een C-call hangt kun
+    je niet afbreken -- in-proces was dat dus het einde van de mic tot een app-herstart,
+    terwijl de pill vrolijk "opnemen" bleef tonen. Een proces kún je wél afschieten.
+
+    Gevolg voor deze klasse: hij raakt PortAudio nérgens meer aan. Er is geen
+    `self.stream` meer, geen zombie-boekhouding, geen `audiodev.refresh()` (die is naar
+    de helper verhuisd, waar hij ongevaarlijk is). Het enige wat hier nog kan blokkeren
+    is een pipe-lees op een werkthread; zelfs commando's gaan via een wachtrij, zodat de
+    Fn-callback op de main thread niets doet dat kan wachten."""
 
     def __init__(self):
-        self.stream = None
         self.recording = False
         self.frames = []
         self.preroll = collections.deque(maxlen=int(PREROLL_SEC * SAMPLE_RATE / BLOCK))
         self.lock = threading.Lock()
         self.last_used = 0.0
-        self._open_ev = None   # Event van een lopende open-poging; None = geen bezig
-        self._open_t = 0.0     # wanneer die poging begon; na OPEN_RETRY_SEC is 'ie verloren
-        self._zombies = 0      # opgegeven open-pogingen die nog in een CoreAudio-call
-                               # hangen; zolang dit > 0 is mag _open() PortAudio niet
-                               # her-initialiseren (zie daar)
+        self.mic_open = False       # vervangt de oude self.stream -- wij hébben er geen
+        self.mic_name = None
+        self.respawns = 0           # hoe vaak we een vastgelopen helper opruimden
+        self._opened = threading.Event()
+        self._proc = None
+        self._cmdq = None           # wachtrij naar de stdin-schrijver van déze helper
+        self._gen = 0               # generatie; frames van een oude helper negeren we
+        self._pending = None        # (commando, starttijd) waar we antwoord op wachten.
+                                    # Eén tuple in één attribuut, bewust: twee losse
+                                    # attributen zijn twee stores, en las de supervisor
+                                    # daartussen dan zag 'ie het nieuwe commando met de
+                                    # oude tijd -- en schoot de helper meteen af
+        self._close_sent = False    # er is een 'close' onderweg; 'de mic staat open' is
+                                    # dan niet genoeg om op af te gaan (zie start())
+        self._spawn_t = 0.0
+        self._fails = 0             # helpers op rij die niet eens 'ready' haalden
+        self._hlock = threading.Lock()   # serialiseert spawn/afschieten
+        self._spawn()
         threading.Thread(target=self._reap_idle, daemon=True).start()
+        threading.Thread(target=self._supervise, daemon=True).start()
 
-    def _callback(self, indata, frames, time_info, status):
+    # ---------- de helper ----------
+
+    def _spawn(self):
+        """Start een verse helper en gooi de oude weg. Kost ~320 ms (gemeten), dus dit
+        gebeurt bij het opstarten en verder alleen na een vastloper."""
+        with self._hlock:
+            self._kill_locked()
+            self._gen += 1
+            gen = self._gen
+            self._spawn_t = time.monotonic()
+            try:
+                proc = subprocess.Popen(
+                    [sys.executable, os.path.join(APP_DIR, "mic_helper.py")],
+                    stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE, bufsize=0, cwd=APP_DIR)
+            except Exception as e:
+                self._fails += 1
+                print(f"  ! mic-helper starten mislukt: {e}")
+                return
+            q = queue.Queue()
+            self._proc, self._cmdq = proc, q
+            self._pending = None
+            self._close_sent = False
+            self._opened.clear()
+            with self.lock:
+                self.mic_open = False
+            for target, args in ((self._reader, (proc, gen)),
+                                 (self._stderr_reader, (proc,)),
+                                 (self._writer, (proc, q))):
+                threading.Thread(target=target, args=args, daemon=True).start()
+
+    def _kill_locked(self):
+        """SIGKILL, geen SIGTERM-beleefdheid: een helper die in CoreAudio hangt komt
+        nergens meer aan toe. Dat dit werkt is geen aanname -- het vastgelopen proces
+        van 27-08 ging dood op een gewóne kill, mét vier threads op de HAL-sloten."""
+        proc, self._proc, self._cmdq = self._proc, None, None
+        if proc is None:
+            return
+        try:
+            proc.kill()
+        except Exception:
+            pass
+        # Oogsten op een aparte thread. SIGKILL is niet te blokkeren dus wait() keert
+        # snel terug, maar niemand hoort hier ooit op een proces te staan wachten.
+        threading.Thread(target=self._reap_proc, args=(proc,), daemon=True).start()
+
+    @staticmethod
+    def _reap_proc(proc):
+        try:
+            proc.wait(timeout=5)
+        except Exception:
+            pass
+        for pipe in (proc.stdin, proc.stdout, proc.stderr):
+            try:
+                pipe.close()
+            except Exception:
+                pass
+
+    def _respawn(self, why: str):
+        # Rem erop: mislukt het starten zelf, dan zou de supervisor vier keer per
+        # seconde een nieuwe proberen en de log volschrijven. Bij helpers die op rij
+        # niet eens 'ready' halen (bestand weg, kapotte import) loopt de wachttijd op
+        # tot een halve minuut -- luid genoeg om te zien, stil genoeg om te lezen.
+        wait = min(HELPER_RESPAWN_SEC * (2 ** self._fails), 30.0)
+        if time.monotonic() - self._spawn_t < wait:
+            return
+        self.respawns += 1
+        print(f"  ! mic-helper opnieuw gestart ({why})")
+        was_recording = self.recording
+        self._spawn()
+        if was_recording:
+            # Middenin een dictaat: meteen weer open, anders praat je tegen niets. Wat
+            # tot hier binnenkwam staat al in self.frames en blijft gewoon staan.
+            self._request_open()
+
+    # ---------- praten met de helper ----------
+
+    def _writer(self, proc, q):
+        """Commando's naar de helper. Op een eigen thread, want een pipe-schrijf kan
+        blokkeren als de helper niet meer leest -- en de aanroeper is soms de main
+        thread (de Fn-callback), die nooit mag wachten."""
+        while True:
+            cmd = q.get()
+            if cmd is None:
+                return
+            try:
+                proc.stdin.write((cmd + "\n").encode())
+                proc.stdin.flush()
+            except Exception:
+                return
+
+    def _send(self, cmd: str):
+        q = self._cmdq
+        if q is not None:
+            q.put(cmd)
+
+    def _request_open(self):
+        self._opened.clear()
+        self._close_sent = False
+        self._pending = ("open", time.monotonic())
+        self._send("open")
+
+    def _request_close(self):
+        self._close_sent = True
+        self._pending = ("close", time.monotonic())
+        self._send("close")
+
+    def _done(self, cmd):
+        """Meld dat de helper `cmd` heeft afgehandeld. Alleen als het antwoord bij het
+        openstaande commando hóórt: staat er een 'open' te wachten en komt er een
+        'closed' binnen (de reaper sloot net, jij drukte Fn), dan moet die open gewoon
+        bewaakt blijven."""
+        pending = self._pending
+        if pending is not None and (cmd is None or pending[0] == cmd):
+            self._pending = None
+
+    def _reader(self, proc, gen):
+        """Leest de framestroom van de helper. Blokkeert vrolijk -- dit is een
+        werkthread, en gaat de helper dood dan valt de pipe dicht en stoppen we."""
+        out = proc.stdout
+        while True:
+            head = _read_exact(out, HELPER_HEADER.size)
+            if head is None:
+                return
+            magic, kind, length = HELPER_HEADER.unpack(head)
+            if magic != HELPER_MAGIC:
+                print("  ! mic-helper stuurt onleesbare frames; verse helper")
+                return          # de supervisor ziet het dode proces en start opnieuw
+            payload = _read_exact(out, length) if length else b""
+            if payload is None:
+                return
+            if gen != self._gen:
+                continue        # oude helper: zijn audio hoort niet meer bij dit dictaat
+            if kind == b"A":
+                self._on_audio(payload)
+            elif kind == b"J":
+                self._on_status(payload)
+
+    def _stderr_reader(self, proc):
+        for line in iter(proc.stderr.readline, b""):
+            text = line.decode(errors="replace").rstrip()
+            if text:
+                print(f"  ! mic-helper: {text}")
+
+    def _on_audio(self, payload: bytes):
+        # Zelfde vorm als vroeger uit sounddevice: (samples, 1) int16.
+        block = np.frombuffer(payload, dtype="<i2").reshape(-1, 1)
         with self.lock:
-            (self.frames if self.recording else self.preroll).append(indata.copy())
+            (self.frames if self.recording else self.preroll).append(block)
             recording = self.recording
         if recording and HUD:
-            rms = float(np.sqrt(np.mean(indata.astype(np.float64) ** 2)))
+            rms = float(np.sqrt(np.mean(block.astype(np.float64) ** 2)))
             HUD.set_level(math.sqrt(min(rms / HUD_FULL_SCALE, 1.0)))
+
+    def _on_status(self, payload: bytes):
+        try:
+            msg = json.loads(payload.decode())
+        except Exception:
+            return
+        ev = msg.get("ev")
+        if ev == "opened":
+            with self.lock:
+                self.mic_open = True
+                self.mic_name = msg.get("device")
+            self._done("open")
+            self._opened.set()
+        elif ev == "open_failed":
+            print(f"  ! mic openen mislukt: {msg.get('err')}")
+            self._done("open")
+            # Wél vrijgeven: dit dictaat neemt niets op, en dat merkt handle() aan de
+            # lege audio (foutcue). Eeuwig laten wachten zou erger zijn.
+            self._opened.set()
+        elif ev in ("closed", "close_failed"):
+            if ev == "close_failed":
+                print(f"  ! mic sluiten mislukt: {msg.get('err')}")
+            with self.lock:
+                self.mic_open = False
+            self._close_sent = False
+            self._done("close")
+            # Niet _opened.clear() als er nog een 'open' onderweg is: die zette het
+            # event bewust op scherp en mag 'm zo meteen zetten.
+            if self._pending is None:
+                self._opened.clear()
+        elif ev in ("ready", "pong"):
+            self._fails = 0          # deze helper leeft echt; rem weer los
+            self._done(None)
+
+    def _supervise(self):
+        """De enige plek die een vastgelopen helper opruimt -- en daarmee het hele
+        antwoord op "hoe zorgen we dat dit niet meer gebeurt". Blijft een commando
+        onbeantwoord, dan hangt de helper in CoreAudio: afschieten en verder."""
+        while True:
+            time.sleep(0.25)
+            proc = self._proc
+            if proc is None or proc.poll() is not None:
+                self._respawn("het proces was weg")
+                continue
+            pending = self._pending          # één lees: (commando, starttijd)
+            if pending is not None and \
+                    time.monotonic() - pending[1] > HELPER_DEADLINE:
+                self._respawn(f"'{pending[0]}' bleef {HELPER_DEADLINE:.0f}s "
+                              "onbeantwoord -- vastgelopen in CoreAudio")
 
     def _reap_idle(self):
         while True:
             time.sleep(5)
             with self.lock:
-                idle = self.stream and not self.recording \
+                idle = self.mic_open and not self.recording \
                     and time.monotonic() - self.last_used > IDLE_CLOSE_SEC
             if idle:
-                self._close()
+                # Precies de call die vroeger de hele mic kon meenemen. Blijft 'ie
+                # hangen, dan ruimt de supervisor de helper op en merk jij er niets van.
+                self._request_close()
 
-    def _ensure_open(self) -> threading.Event:
-        """Zorg dat er een mic-stream komt, zónder er zelf op te wachten. Geeft een Event
-        terug dat vuurt zodra de poging klaar is (gelukt of niet).
-
-        Waarom niet gewoon openen: dit wordt aangeroepen vanuit de Fn-callback op de main
-        thread, en dat is de thread die de event-tap, de pill én het venster draait.
-        `InputStream()/start()` is een AUHAL-call die de HAL-mutex pakt -- gezond 70-110 ms
-        (gemeten), maar tijdens een apparaatwissel onbegrensd. Bleef die hangen, dan hing
-        de hele app: geen Fn, geen pill, niets. Nu blokkeert hooguit een werkthread.
-
-        Eén open tegelijk -- met een houdbaarheidsdatum. Een tweede Fn-druk wacht op
-        dezelfde poging in plaats van er nog een CoreAudio-call bovenop te gooien. Maar
-        hangt die poging langer dan OPEN_RETRY_SEC (gezond is 70-110 ms), dan telt 'ie
-        als verloren: afbreken kan niet (de thread zit in een C-call), dus we laten 'm
-        als zombie hangen en starten een verse poging. Vroeger bleef élke volgende
-        Fn-druk op datzelfde dode event wachten -- één blijvende HAL-hang en de mic was
-        dood tot een app-herstart, terwijl de pill gewoon "opnemen" toonde. Maakt de
-        zombie z'n stream later alsnog af, dan hangt _open_worker die aan self.stream
-        of ruimt 'm als stale op; dat pad bestond al."""
-        with self.lock:
-            if self.stream is not None:
-                done = threading.Event()
-                done.set()
-                return done
-            if self._open_ev is not None and \
-                    time.monotonic() - self._open_t > OPEN_RETRY_SEC:
-                self._zombies += 1        # afgemeld in de finally van z'n eigen worker
-                self._open_ev = None
-                print(f"  ! mic-open hangt al {OPEN_RETRY_SEC:.0f}s in CoreAudio; "
-                      "poging opgegeven, nieuwe poging gestart")
-            if self._open_ev is None:
-                self._open_ev = threading.Event()
-                self._open_t = time.monotonic()
-                threading.Thread(target=self._open_worker, args=(self._open_ev,),
-                                 daemon=True).start()
-            return self._open_ev
-
-    def _open_worker(self, ev: threading.Event):
-        """De eigenlijke open, op een werkthread. Loopt CoreAudio vast, dan hangt alleen
-        deze thread -- de app blijft leven."""
-        stream = None
-        try:
-            stream = self._open()
-        finally:
-            stale = None
-            with self.lock:
-                if self._open_ev is ev:
-                    self._open_ev = None
-                else:
-                    # Wij waren al opgegeven (of vervangen) door _ensure_open; meld de
-                    # zombie af zodat _open() weer mag her-initialiseren.
-                    self._zombies -= 1
-                if stream is not None:
-                    if self.stream is None:
-                        self.stream = stream
-                    else:
-                        stale = stream        # er stond er al één: deze weer opruimen
-            ev.set()
-            if stale is not None:             # buiten de lock: CoreAudio, zie _close()
-                try:
-                    stale.stop()
-                    stale.close()
-                except Exception:
-                    pass
-
-    def _open(self):
-        if self.stream is not None:
-            return None
-        # Kies de mic elke keer opnieuw: koppel je AirPods los, dan wisselt de
-        # keuze mee. Opnemen van een Bluetooth-mic zou je muziek naar telefoon-
-        # kwaliteit trekken, dus 'auto' mijdt die - zie audiodev.py.
-        # Maar: PortAudio bevriest de apparaatlijst bij proces-start en ziet hotplug
-        # niet. Zonder een re-init blijft die "opnieuw kiezen" op de OUDE topologie
-        # hangen -- AirPods eruit -> sounddevice toont ze nog -> we openen het verdwenen
-        # apparaat -> stilte. audiodev.refresh() maakt de lijst live (zie de docstring
-        # daar). Veilig hier: we bereiken dit alleen als self.stream None is (hierboven),
-        # dus er staat geen stream open die de re-init zou raken.
-        #
-        # Draait ALTIJD op een werkthread (via _open_worker), nooit op de main thread:
-        # deze drie calls zijn de onbegrensde CoreAudio-calls van de app. Daarom geven we
-        # de gestarte stream terug in plaats van 'm zelf aan self te hangen -- de worker
-        # doet dat ónder de lock. En we vangen CoreAudio-fouten hier af (een AUHAL-hik na
-        # een apparaatwissel, bv. err=-10851): faalt het openen, dan neemt dit dictaat
-        # niets op (de energie-poort verwerpt de stilte netjes) en probeert de volgende
-        # Fn-druk opnieuw.
-        try:
-            # De re-init alleen als er geen zombie-poging meer in CoreAudio hangt:
-            # sd._terminate() terwijl een andere thread in Pa_OpenStream/start
-            # geblokkeerd staat is vragen om een crash. Een retry-poging draait dan op
-            # de bevroren apparaatlijst -- het mindere kwaad: een misgekozen apparaat
-            # faalt snel en de volgende Fn-druk probeert het gewoon opnieuw.
-            with self.lock:
-                solo = self._zombies == 0
-            if solo:
-                audiodev.refresh()
-            device, name, _ = audiodev.choose_input()
-            stream = sd.InputStream(samplerate=SAMPLE_RATE, channels=1,
-                                    dtype="int16", blocksize=BLOCK,
-                                    device=device, callback=self._callback)
-            stream.start()
-            return stream
-        except Exception as e:
-            print(f"  ! mic openen mislukt: {e}")
-            return None
-
-    def _close(self):
-        # Haal de stream-referentie ónder de lock weg, maar stop/sluit 'm BUITEN de
-        # lock. stream.stop()/close() zijn CoreAudio-calls die kunnen blokkeren als
-        # het audio-apparaat in een slechte staat schiet (apparaatwissel -> AUHAL-
-        # fout). De lock hier vasthouden zou de Fn-tap op de main thread op die lock
-        # laten wachten -> de hele app bevriest (echt gebeurd: HAL-mutex-deadlock in
-        # AudioOutputUnitStop). Zo raakt geen enkele CoreAudio-call ooit de lock, en
-        # kan de Fn-callback de lock altijd meteen pakken.
-        with self.lock:
-            stream, self.stream = self.stream, None
-            self.preroll.clear()
-        if stream is not None:
-            try:
-                stream.stop()
-                stream.close()
-            except Exception as e:
-                print(f"  ! mic sluiten mislukt: {e}")
+    # ---------- wat de rest van de app gebruikt ----------
 
     def start(self, use_preroll: bool = True):
         # Eerst opnemen aanzetten, dán pas (eventueel) op de mic wachten. Zo landt elk
@@ -387,14 +518,15 @@ class Recorder:
             # van vóór de Fn-druk bestaat dan uit muziek, en die wil Whisper niet.
             self.frames = list(self.preroll) if use_preroll else []
             self.recording = True
-            have_stream = self.stream is not None
-        if have_stream:
-            return          # normale geval: de mic staat al open, geen CoreAudio-call
-        # Koude start (eerste dictaat na IDLE_CLOSE_SEC). Openen gebeurt op een
-        # werkthread; hier wachten we er begrensd op, zodat het gedrag hetzelfde blijft
-        # als vroeger (openen kost 70-110 ms, dus ruim binnen de deadline) maar een
-        # vastgelopen CoreAudio de run loop nooit langer dan dit stilzet.
-        if not self._ensure_open().wait(OPEN_WAIT_SEC):
+            # 'De mic staat open' is niet genoeg als de reaper net een 'close' heeft
+            # weggestuurd: die komt zo alsnog aan en dan praat je tegen niets. De
+            # helper werkt commando's op volgorde af, dus een 'open' erachteraan laat
+            # 'm gewoon weer opengaan.
+            have = self.mic_open and not self._close_sent
+        if have:
+            return          # normale geval: de mic staat al open
+        self._request_open()
+        if not self._opened.wait(OPEN_WAIT_SEC):
             print(f"  ! mic reageert niet binnen {OPEN_WAIT_SEC:.2f}s; dit dictaat begint "
                   "zodra hij open is (de app blijft gewoon werken)")
 
