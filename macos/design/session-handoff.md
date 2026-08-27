@@ -3,7 +3,99 @@
 _Doel: na een `/clear` of in een nieuwe sessie meteen verder kunnen. Wat er staat, de
 staat van de code, openstaande draden en hoe je de app bedient._
 
-**Laatste update (24 augustus 2026) — tester-bug "pill toont opnemen, maar hij neemt
+**Laatste update (27 augustus 2026) — de oorzaak ónder de tester-bug gevonden en
+weggenomen: de microfoon draait voortaan in een eigen proces. Commit `3ae3427` op
+`main`, gepusht (= live via auto-update).**
+
+Sam meldde "samflow neemt niet op". Het proces draaide, de Fn-tap werkte, de pill
+toonde "opnemen" — en er kwam niets. Dit is dezelfde klacht als de tester-bug van 24
+augustus; die sessie dichtte de *symptomen*, deze de oorzaak.
+
+**Diagnose (sample van het lévende proces, vóór het afsluiten — dat bewijs is er dus
+één keer).** Vier threads op twee CoreAudio-sloten:
+
+1. de idle-reaper in `stream.stop()` → `AudioOutputUnitStop` → `HALB_Mutex::Lock`;
+2. CoreAudio's eigen `com.apple.audio.IOThread.client` in PortAudio's
+   `startStopCallback` → `AudioUnitGetProperty` → component-mutex;
+3. `Pa_Terminate` (= `audiodev.refresh()`) in `FinishStoppingStream`;
+4. `Pa_OpenStream` van de volgende Fn-druk.
+
+(1) en (2) houden elkaars slot: **lock-order-inversie, niemand laat ooit los.** (3) en
+(4) zijn slachtoffers die er bovenop kwamen. De main thread was gezond (`mach_msg`) —
+vandaar dat de app leefde terwijl de mic dood was.
+
+**Waarom dit niet in-proces te repareren is.** Nagekeken in de PortAudio-binary, niet
+beredeneerd: `stop`, `abort` én `close` takken alle drie af naar `FinishStoppingStream`
+→ `AudioOutputUnitStop` (geen enkel afbreek-pad ontwijkt het), en `startStopCallback`
+wordt ongeconditioneerd geregistreerd bij het openen (`AudioUnitAddPropertyListener`,
+`w1=0x7d1` = `kAudioOutputUnitProperty_IsRunning`, callback `0xaf90`). Elke
+stream-afbraak draagt de deadlock dus in zich, en een thread die in een C-call hangt
+kun je niet afbreken. **Probeer dit niet opnieuw in-proces op te lossen.**
+
+**Tussenstap die er nog even in zat (en weer weg is).** Eerst het gat in de vangrail
+gedicht: die telde alleen hangende *opens* (`_zombies`), nooit een hangende *close*. De
+eerstvolgende `_open()` dacht dus dat 'ie alleen was en draaide `audiodev.refresh()` er
+dwars doorheen; `Pa_Terminate` liep dezelfde sloten in en bleef er zelf in staan →
+PortAudio prócesbreed kapot, mic dood tot een app-herstart. Dat was containment, geen
+oplossing, en is opgegaan in de verhuizing hieronder.
+
+**De fix: `mic_helper.py`.** De mic zit nu in een kindproces; `samflow.py` praat er over
+een pipe mee en raakt PortAudio nérgens meer aan. Frameprotocol
+`b'SF' | type | lengte | payload` (`A` = rauwe int16-audio, `J` = JSON-status),
+commando's `open`/`close`/`ping`/`quit` als regels op stdin. `Recorder._supervise` geeft
+elk commando `HELPER_DEADLINE` (3s); blijft het antwoord uit, dan SIGKILL en een verse
+helper. Pre-roll, RMS voor de HUD en de energie-poort staan onveranderd in de ouder.
+
+**Gemeten:**
+
+| | |
+|---|---|
+| koud openen (warme helper) | 70–136 ms (was 70–110 ms in-proces: geen regressie) |
+| warme mic, `start()` | 0,004 ms — er valt niets meer te wachten |
+| herstel na een vastloper | 3,1 s, automatisch |
+| verse helper starten | ~320 ms |
+
+**Geverifieerd:** helper bevroren met `SIGSTOP` (van buiten niet te onderscheiden van
+een CoreAudio-hang) → opgeruimd en vervangen, en een bevriezing middenin een opname
+liet het dictaat gewoon doorlopen omdat de ouder zelf heropent. Zes normale
+open/sluit-cycli → nul respawns. Ouder met `kill -9` → geen wees met de mic in handen.
+Audio komt ongewijzigd als 16 kHz mono WAV bij whisper-server aan. En het beste bewijs:
+een echt dictaat van Sam (5,8s spraak → 0,60s) liep al door de nieuwe architectuur, dus
+de helper krijgt gewoon mic-toestemming onder de app-bundle (TCC loopt via de
+ouder-keten bundel → samflow.py → mic_helper.py).
+
+**Drie gaten in de eigen nieuwe code gevonden bij het nalezen en gedicht:**
+`self._cmd, self._cmd_t = ...` waren twee stores (las de supervisor ertussenin, dan zag
+'ie het nieuwe commando met de oude tijd en schoot de helper meteen af — nu één tuple in
+`_pending`); een `close` die onderweg was maakte "de mic staat open" een leugen
+(`_close_sent`, en de helper werkt commando's op volgorde af dus een `open` erachteraan
+volstaat); en een helper die zichzelf niet kan starten liep 1×/s te loggen (backoff tot
+30s via `_fails`).
+
+**Verdwenen omdat ze overbodig werden:** `_zombies`, `_open_ev`, `_open_worker`,
+`OPEN_RETRY_SEC`, en `audiodev.refresh()` uit het opnamepad — die staat nu in de helper,
+waar een vastloper hooguit dat proces kost. `import sounddevice` is uit `samflow.py`
+weg; `audiodev` blijft daar alleen voor *enumeratie* (`--check`, dashboard-mic-chip), en
+dat opent geen stream dus het kan de deadlock niet raken.
+
+**Openstaande draden hierbij:**
+
+- **De tester laten updaten en één dictaat laten doen.** Als haar klacht route 1 was
+  (hangende mic-open), dan is dit precies wat het oploste.
+- **Kijken of `mic-helper opnieuw gestart` ooit in de log opduikt.** Dat is nu de enige
+  zichtbare sporenlezer voor deze deadlock; blijft 'ie weken weg, dan is de frequentie
+  lager dan gedacht. Duikt 'ie vaak op, dan is `IDLE_CLOSE_SEC` (45s) de knop: elke
+  idle-sluiting is een kans op de inversie, dus die hoger zetten (of instelbaar maken)
+  verkleint de blootstelling.
+- `HELPER_DEADLINE` staat op 3s. Bewust ruim: een apparaatwissel mag een trage-maar-
+  gezonde open opleveren. Zie je onnodige herstarts, dan is dát de knop — niet de
+  supervisor eruit slopen.
+- `README.md` verwijst nog naar een "TCC-val"-sectie die er niet meer in staat
+  (CLAUDE.md wijst ernaar). Klein, maar het klopt niet.
+
+---
+
+**Eerder (24 augustus 2026) — tester-bug "pill toont opnemen, maar hij neemt
 niet op". Commit `1ca5fc1`, gepusht naar `origin/main` (die push nam ook de eerder nog
 lokale VAD-commits t/m `f955350` mee — alles staat nu online, tester krijgt het via de
 in-app updater).**
@@ -817,6 +909,9 @@ afwijkend via `_sane`) → gewoon de Route-A-tekst terug; nooit een exceptie naa
 - `cleanup.py`: nooit een regex zonder een `EXAMPLES`-voorbeeld; let op NL valse positieven.
 - `lexicon.py`: `canonicalise` raakt nooit een woord buiten de lijst aan (de belofte).
 - **Nooit stilte naar Whisper** (energie-poort + HALLUCINATIONS).
+- **PortAudio blijft uit `samflow.py`.** De mic hoort in `mic_helper.py`; elke
+  stream-afbraak kan met CoreAudio's IO-thread in een deadlock belanden waar geen
+  van beide uit komt, en dan is alleen een proces afschieten nog een uitweg.
 - Nieuwe schijf-data buiten de repo-dir (App Support); `settings.json` blijft in de repo-dir
   (watchdog.sh grept dat pad). `history.jsonl` bevat tekst → 0600, nooit naast een git-checkout.
 
