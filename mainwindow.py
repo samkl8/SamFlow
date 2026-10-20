@@ -67,6 +67,9 @@ MIN_CONTENT_W = ui.W           # 470 -- de smalste stand; de prefs-view past hie
 WIN_W = SIDE_W + MIN_CONTENT_W  # start- én minimumbreedte van het venster
 WIN_H = 600                    # starthoogte
 MIN_WIN_H = 480                # onder deze hoogte wordt het dashboard te krap
+# Historie toont per keer zoveel rijen. Elke rij is ~10 views op de main thread: 4.186
+# dictaten in één keer bouwen zette de hele app 15-23s stil (stall-logs 20-10).
+HIST_PAGE = 100
 STATS_4COL_W = 620             # inner-breedte vanaf waar de stat-tegels 4-op-een-rij gaan
 
 _GRAPHITE = (0.118, 0.118, 0.133)         # #1E1E22 -- de constante van SamFlow
@@ -798,6 +801,7 @@ class MainWindow(NSObject):
         self._hist_list = None
         self._hist_shown = []
         self._hist_header_h = 0
+        self._hist_limit = HIST_PAGE
         self._hist_cache = {}           # query -> items, gecachet per history.mtime()
         self._hist_cache_m = object()   # sentinel: forceert eerste vulling
         # woordenlijst-tab
@@ -1104,7 +1108,8 @@ class MainWindow(NSObject):
     def _fill_history_list(self, c, query):
         for s in list(c.subviews()):
             s.removeFromSuperview()
-        items = self._hist_items(query)
+        everything = self._hist_items(query)
+        items = everything[:self._hist_limit]
         self._hist_shown = items
         inner_w = self._content_w - 2 * ui.PAD
         if not items:
@@ -1166,6 +1171,14 @@ class MainWindow(NSObject):
 
             y = ui.card_group(c, ui.PAD, y, inner_w, [46] * len(rows), fill_row)
             y += 6
+        rest = len(everything) - len(items)
+        if rest > 0:
+            more = self._link_btn("Toon meer", "historyMore:")
+            more.setTitle_(more.title() + f" · {rest}" + _t(" ouder"))
+            more.sizeToFit()
+            more.setFrame_(NSMakeRect(ui.PAD, y + 4, more.frame().size.width, 18))
+            c.addSubview_(more)
+            y += 30
         return y + 8
 
     # historie-acties
@@ -1174,7 +1187,18 @@ class MainWindow(NSObject):
         self.show_tab(1)
 
     def historySearch_(self, sender):
-        self._hist_query = sender.stringValue()
+        q = sender.stringValue()
+        if q != self._hist_query:
+            self._hist_limit = HIST_PAGE
+        self._hist_query = q
+        self._refill_history()
+
+    def historyMore_(self, _sender):
+        self._hist_limit += HIST_PAGE
+        self._refill_history()
+
+    @objc.python_method
+    def _refill_history(self):
         h = self._fill_history_list(self._hist_list, self._hist_query)
         cw = self._content_w
         self._hist_list.setFrameSize_((cw, h))

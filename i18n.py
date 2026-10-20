@@ -86,6 +86,8 @@ EN = {
     "Annuleren": "Cancel",
     "Wis alles": "Erase all",
     "Zet uit": "Turn off",
+    "Toon meer": "Show more",
+    " ouder": " older",
     "wis": "erase",
     "Kopiëren": "Copy",
     "✓ Gekopieerd": "✓ Copied",
