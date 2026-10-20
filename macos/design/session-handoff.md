@@ -3,7 +3,54 @@
 _Doel: na een `/clear` of in een nieuwe sessie meteen verder kunnen. Wat er staat, de
 staat van de code, openstaande draden en hoe je de app bedient._
 
-**Laatste update (27 augustus 2026) — de oorzaak ónder de tester-bug gevonden en
+**Laatste update (20 oktober 2026) — "samflow loopt helemaal vast": de Historie-tab
+bouwde alle dictaten in één keer. Commit `a0de02c` op `main`, gepusht.**
+
+Sam meldde dat de app helemaal vastliep. `stall.py` had het al gevangen: vier
+vastlopers van 15–23s achter elkaar, en élke Python-stack eindigde in
+`mainwindow.py` → `show_tab` → `_historie_view` → `_fill_history_list` →
+`ui.card_group`. Geen CoreAudio, geen mic, geen pill-tik: puur venster-bouwen.
+
+**Oorzaak.** `history.jsonl` bevatte **4.186 dictaten**, en de Historie-tab maakte voor
+élk een rij van ~10 NSViews (tijd, app-chip, Kopieer, Wis, woordtelling, tekst, lijn…):
+ruim 40.000 views op de main thread. Dat is dezelfde thread als de Fn-tap en de pill,
+dus de hele app lag stil zolang de tab werd opgebouwd. De klacht groeide sluipend mee
+met de geschiedenis — bij een paar honderd dictaten merk je niets. Zoeken (`historySearch_`,
+per toetsaanslag) en Wis (`historyRemove_`, herbouwt de lijst) liepen in dezelfde val.
+
+**Fix.** `HIST_PAGE = 100`: de lijst toont de nieuwste 100 (of 100 zoekresultaten), met
+onderaan een link "Toon meer · N ouder" (`historyMore_`) die er telkens 100 bij zet.
+Zoeken filtert nog altijd over álle dictaten; een gewijzigde zoekterm zet de limiet
+terug op 100, Wis houdt 'm vast. Herbouwen loopt via één `_refill_history()`. Twee
+nieuwe i18n-sleutels ("Toon meer", " ouder").
+
+**Gemeten** (headless, `_historie_view()` met de echte history van Sam):
+
+| | |
+|---|---|
+| met `HIST_PAGE` (100 rijen) | 0,17 s |
+| zonder limiet (4.186 rijen) | 3,42 s headless — live, mét venster en layout, 15–23 s |
+
+App herstart; draait sinds 08:42 op de nieuwe code.
+
+**Openstaande draden hierbij:**
+
+- **Twee kortere vastlopers zonder Python-frame** (20-10 05:16, 14,4s, en 3,2s vlak
+  erna): alleen `app.run()` in de stack, en het `sample`-bestand heeft een **lege
+  call graph** — dus niet te diagnosticeren. Mogelijk systeem (wake uit slaap om 05:16).
+  Duiken ze vaker op, kijk dan eerst waarom `sample` niets vastlegt (dat gat in
+  `stall.py` maakt élke native vastloper blind).
+- `history_days` staat bij Sam uit ("altijd bewaard"), dus de lijst blijft groeien. De
+  paginering houdt het venster snel, maar `history.search()` leest en sorteert bij elke
+  mtime-wijziging nog altijd het hele bestand. Bij tienduizenden regels wordt dát de
+  volgende kandidaat; meten voordat je er iets aan doet.
+- Algemene les voor `mainwindow.py`: **een lijst die met gebruik groeit, bouw je nooit
+  volledig op de main thread.** Zelfde categorie als de "geen call zonder bovengrens"-
+  regel in CLAUDE.md, maar dan voor de hoeveelheid views.
+
+---
+
+**Eerder (27 augustus 2026) — de oorzaak ónder de tester-bug gevonden en
 weggenomen: de microfoon draait voortaan in een eigen proces. Commit `3ae3427` op
 `main`, gepusht (= live via auto-update).**
 
